@@ -1,0 +1,125 @@
+
+1. Data.sql 사용하기
+
+2. 테스트 정리하기
+
+3. 테스트 자동화
+
+=====================================================================
+
+1. Data.sql 사용하기
+=> 작성한 sql문은 기본적으로 생성되고 실행되는 InfomanagementApplicationTests의
+   contextLoads() 함수에 의해 자동으로 로드된다.
+
+1) data.sql 파일 만들기
+
+test directory 하위에 resources(directory) -> file -> data.sql
+
+-data.sql
+insert into person('id', 'name', 'age', 'blood_type')
+values (1,'홍길동', 18, 'A');
+
+-Birthday
+멤버 변수를 모두 int -> Integer 로 바꾼다.
+**만약 int로 입력되어 있다면 not null로 인식된다.**
+
+-실행 결과
+PersonRepositoryTest -> crud() 로 테스트
+
+--------------------------------------
+
+2) PersonRepositoryTest의 givenPerson 로직 단순화하기
+
+- PersonRepositoryTest : findByBloodType 함수
+    @Test
+    void findByBloodType(){
+        List<Person> result = personRepository.findByBloodType("A");
+
+        Assertions.assertThat(result.size()).isEqualTo(2);
+        Assertions.assertThat(result.get(0).getName().equals("홍길동"));
+        Assertions.assertThat(result.get(1).getName().equals("허균"));
+    }
+
+-data.sql //오타 조심
+insert into person(`id`, `name`, `age`, `blood_type`, `year_of_birthday`, `month_of_birthday`, `day_of_birthday`) values (1, '홍길동', 10, 'A', 1991, 8, 15);
+insert into person(`id`, `name`, `age`, `blood_type`, `year_of_birthday`, `month_of_birthday`, `day_of_birthday`) values (2, '허준', 9, 'AB', 1992, 7, 21);
+insert into person(`id`, `name`, `age`, `blood_type`, `year_of_birthday`, `month_of_birthday`, `day_of_birthday`) values (3, '허균', 8, 'A', 1993, 10, 15);
+insert into person(`id`, `name`, `age`, `blood_type`, `year_of_birthday`, `month_of_birthday`, `day_of_birthday`) values (4, '황진이', 7, 'B', 1994, 8, 31);
+insert into person(`id`, `name`, `age`, `blood_type`, `year_of_birthday`, `month_of_birthday`, `day_of_birthday`) values (5, '장영실', 6, 'O', 1995, 12, 23);
+
+-실행 결과
+위의 함수를 실행하면 데이터는 어디서 올까? = data.sql 에서 추가한 데이터를 기반으로 실행된다.
+
+- PersonRepositoryTest 마저 수정 + cascade 함수 삭제
+    @Test
+    void findByBirthdayBetween() {
+        List<Person> result = personRepository.findByMonthOfBirthday(8);
+
+        Assertions.assertThat(result.size()).isEqualTo(2);
+        Assertions.assertThat(result.get(0).getName()).isEqualTo("홍길동");
+        Assertions.assertThat(result.get(1).getName()).isEqualTo("황진이");
+    }
+
+--------------------------------------
+
+2) PersonServiceTest의 로직 단순화하기
+
+    @Test
+    void getPeopleByName(){
+        List<Person> result = personService.getPeopleByName("홍길동");
+        Assertions.assertThat(result.size()).isEqualTo(2);
+        Assertions.assertThat(result.get(0).getId()).isEqualTo(1L);
+        Assertions.assertThat(result.get(1).getId()).isEqualTo(5L);
+    }
+
+    @Test
+    @Transactional(readOnly = true)
+    void getPerson(){
+        Person person = personService.getPerson(2L);
+        Assertions.assertThat(person.getName()).isEqualTo("허준");
+    }
+
+--------------------------------------
+
+3) Block
+
+-data.sql 추가
+insert into block(`id`, `name`) values (1, '홍길동');
+insert into block(`id`, `name`) values (2, '허균');
+--아래는 block과 person을 연결해주는 코드
+update person set block_id = 1 where id = 1;
+update person set block_id = 2 where id = 3;
+
+-PersonServiceTest 수정
+    @Test
+    void getPeopleExcludeBlocks(){
+        List<Person> result = personService.getPeopleExcludeBlocks();
+
+        Assertions.assertThat(result.size()).isEqualTo(3);
+        Assertions.assertThat(result.get(0).getName()).isEqualTo("허준");
+        Assertions.assertThat(result.get(1).getName()).isEqualTo("황진이");
+        Assertions.assertThat(result.get(2).getName()).isEqualTo("홍길동");
+    }
+
+    @Test
+    void getPeopleByName(){
+        List<Person> result = personService.getPeopleByName("홍길동");
+        Assertions.assertThat(result.size()).isEqualTo(2);
+        Assertions.assertThat(result.get(0).getId()).isEqualTo(1L);
+        Assertions.assertThat(result.get(1).getId()).isEqualTo(5L);
+    }
+
+=====================================================================
+
+3. 전체 테스트 진행
+=> test 하위의 java에서 run
+
+1) "PRIMARY KEY ON PUBLIC.BLOCK(ID) 해결하기
+    @Id
+    //아래와 같은 전략 작성
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+2) BlockRepositoryTest 의 CRUD 함수 : expected: <1> but was: <3> 오류
+=> 동일한 이름의 사람이 세명이다.
+CRUD 테스트에서 unique한 이름 주기

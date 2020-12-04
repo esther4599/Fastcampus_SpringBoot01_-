@@ -1,0 +1,34 @@
+
+java, spring 수업에서 자주 나오지는 않지만 현업에서는 정말 많이 사용된다.
+
+1. lombok - @Getter
+2. lombok - @Setter
+3. lombok - @ToString
+
+**lombok 적용시 상단의 intelliJ -> preference -> build, execution
+    -> compiler -> Annotation Processor -> enable 설정
+=====================================================================
+** getter&setter
+
+1. @Getter @Setter을 변수에
+   기존의 함수를 삭제하고 아래력와 같이 각 변수에 코드 작성
+
+    @Getter
+    @Setter
+    private String name;
+
+2. @Getter @Setter을 class에
+class 위에 해당 주석을 작성하면 각 변수마다 주석을 작성할 필요가 없다.
+
+------------------------------
+
+** toString 함수 lombok 활용
+
+override해서 사용하면 맴버 변수가 추가될 때마다 변경해야 한다. = 번거로움
+class에 @ToString 작성
+
+=> 만약 공개되면 안되는 정보가 있다면
+   1) @ToString(exclude = {"phoneNumber","address"})
+    => 오타의 위험이 있다.
+   2) 제외시킬 변수 위에 @ToString.Exclude
+

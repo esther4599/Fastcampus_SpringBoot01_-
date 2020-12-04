@@ -1,0 +1,160 @@
+
+1. @PostMapping
+
+2. @RequestBody
+
+3. Person 정보를 저장하는 API 생성
+
+=====================================================================
+
+1. @PostMapping
+
+-personService
+@Transactional
+public void putPerson(Person person){
+    personRepository.save(person);
+}
+
+-personController
+@Autowired
+private PersonRepository personRepository;
+
+@PostMapping
+public void postPerson(Person person){
+    personService.putPerson(person);
+    log.info("person-> {}", personRepository.findAll());
+}
+
+-personControllerTest
+@Test
+void postPerson() throws Exception{
+    mockMvc = MockMvcBuilders.standaloneSetup(personController).build();
+
+    mockMvc.perform( MockMvcRequestBuilders.post("/api/person/"))
+            .andDo(print())
+            .andExpect(status().isOk());
+}
+
+- 실행 결과
+test에서 post 호출 => controller의 @PostMapping이 호출 인식
+=> postPerson 실행 => personService.putPerson(person) 실행
+==> 파라미터가 없음....
+
+--------------------------------------
+
+- Person nonnull 조건 지켜지게 수정하기
+==> @NotEmpty, @Column(nullable = false), @Min()
+
+@NonNull
+@NotEmpty //String의 경우에는 notEmpty, nullable
+@Column(nullable = false)
+private String name;
+
+@NonNull
+@Min(1)
+private int age;
+
+@NonNull
+@NotEmpty
+@Column(nullable = false)
+private String bloodType;
+
+- personControllerTest: void postPerson() 실행 결과
+=> 오류 발생. null(String), 0(age)가 입력됨.
+
+--------------------------------------
+
+**디비에서 json 형식의 파일을 사용함**
+
+- post에서 사용할 json 파일 만들기 => test.testdata.json
+{
+    "name": "홍길동",
+    "age": 10,
+    "bloodType" : "A"
+}
+
+-personControllerTest
+: content 추가. perform.(post().content())
+
+@Test
+void postPerson() throws Exception{
+    mockMvc = MockMvcBuilders.standaloneSetup(personController).build();
+
+    mockMvc.perform( MockMvcRequestBuilders.post("/api/person?name=홍길동&age=10&bloodType=A"))
+            .andDo(print())
+            .andExpect(status().isOk());
+}
+
+==> 왜 위와 같은 함수가 만들어질까? 왜 주소 뒤에 일일이 변수를 입력해주는가?
+controller에서
+
+@PostMapping
+public void postPerson(Person person)
+함수는 위와 같이 작성되어있다.
+그럼 파라미터는 디폴트 속성인 @RequestParam 을 갖고,
+@RequestParam 은 url 뒤에서 정보를 가져오므로
+post("/api/person?name=홍길동&age=10&bloodType=A")와 같은
+형식으로 데이터를 작성해야 한다.
+
+--실행 결과
+personController의 postPerson에서 출력된 log
+person-> [Person(id=1, name=홍길동, age=10, hobby=null, bloodType=A, address=null, birthday=null, job=null)]
+
+=====================================================================
+
+2. @RequestBody
+=> url이 아닌 body = content 에서 데이터 가져오기
+
+-personController
+@PostMapping
+public void postPerson(@RequestBody Person person){
+    personService.putPerson(person);
+    log.info("person-> {}", personRepository.findAll());
+}
+
+-personControllerTest
+@Test
+void postPerson() throws Exception{
+    mockMvc = MockMvcBuilders.standaloneSetup(personController).build();
+
+    mockMvc.perform( MockMvcRequestBuilders.post("/api/person")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{ \"name\":\"홍길동\", \"age\":10, \"bloodType\":\"A\" }"))
+            .andDo(print())
+            .andExpect(status().isOk());
+}
+=> .content 이용
+
+-실행 결과
+personController의 postPerson 함수에서 출력된 log
+=> person-> [Person(id=1, name=홍길동, age=10, hobby=null, bloodType=A, address=null, birthday=null, job=null)]
+
+--------------------------------------
+
+** MockMvc 보충 => @ResponseStatus(HttpStatus.CREATED)
+== 201 response = okay와 동일하게 200번대 성공을 의미. 해당 정보가 생성되었음을 좀 더 명확하게 알려주는 코드.
+
+status의 경우 정상 종료시 200으로 okay가 떨어지는 경우가 대부분이나
+post의 경우 예외가 발생하는 경우가 있다.
+이를 수정해보자.
+
+-personController
+@PostMapping
+@ResponseStatus(HttpStatus.CREATED)
+public void postPerson(@RequestBody Person person){
+    personService.putPerson(person);
+    log.info("person-> {}", personRepository.findAll());
+}
+
+
+-personControllerTest => status().isCreated()
+@Test
+void postPerson() throws Exception{
+    mockMvc = MockMvcBuilders.standaloneSetup(personController).build();
+
+    mockMvc.perform( MockMvcRequestBuilders.post("/api/person")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{ \"name\":\"홍길동\", \"age\":10, \"bloodType\":\"A\" }"))
+            .andDo(print())
+            .andExpect(status().isCreated());
+}

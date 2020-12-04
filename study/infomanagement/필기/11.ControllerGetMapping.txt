@@ -1,0 +1,49 @@
+1. @GetMapping
+
+2. @PathVariable
+
+3. Person을 조회하는 API 생성
+
+=====================================================================
+
+1.GetMapping & @PathVariable
+
+=> controller -> personController
+
+1) @RequestParam => 옵션에 필수 여부, 기본값 설정 가능
+
+    //@RequestMapping(method = RequestMethod.GET) //이런 방법도 있다.
+    @GetMapping()
+    public Person getPerson //아래와 같이 값을 입력하지 않아도 돌아가게 만들 수 있다.
+    (@RequestParam(required = false, defaultValue = "1") Long id){
+        return personService.getPerson(id);
+    }
+
+2) @GetMapping & @PathVariable => value를 이용해 주소창을 통한 값 받기
+
+    @GetMapping("/{id}")
+    public Person getPerson(@PathVariable Long id){
+        return personService.getPerson(id);
+    }
+
+--------------------------------------
+
+2.Person을 조회하는 API 생성
+
+-test.controller.PersonControllerTest
+@Test
+void getPerson() throws Exception{
+    mockMvc = MockMvcBuilders.standaloneSetup(personController).build();
+    mockMvc.perform(
+            MockMvcRequestBuilders.get("/api/person/1"))
+            .andDo(print())
+            .andExpect(status().isOk());
+}
+
+-personService
+@Transactional(readOnly = true)
+public Person getPerson(Long id){
+    Person person = personRepository.findById(id).orElse(null); //get = optional에서 값을 가져오는 기능
+    return person;
+}
+

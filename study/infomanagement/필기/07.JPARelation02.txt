@@ -1,0 +1,162 @@
+1. @OneToOne : CascadeType
+
+2. @OneToOne : FetchType
+
+=====================================================================
+
+1. CascadeType
+
+1) CascadeType.PERSIST
+=> 생성 관리
+
+personServiceTest 에서 코드가 아래와 같으면 오류가 발생한다.
+
+private void givenBlockPerson(String name, int age, String bloodType){
+    Person blockPerson = new Person(name, age, bloodType);
+    blockPerson.setBlock(new Block(name)); //오류 발생
+
+    personRepository.save(blockPerson);
+}
+=> BlockRepository 에 의해 저장되지 않은 객체가 연관관계(OneToOne)으로 사용됨
+
+* 위와 같은 문제 해결하기
+Person 코드 아래와 같이 변경
+
+@OneToOne(cascade = CascadeType.PERSIST)
+private Block block;
+
+=> CascadeType.PERSIST = Person에서 Blosk의 영속성을 함께 관리하겠다는 의미이다.
+   = 실행 상태를 보면 blockPerson.setBlock(new Block(name)); 이 수행될 때
+   새로 생성되는 Block이 DB에 자동으로 저장된다.
+
+--------------------------------------
+
+2) CascadeType.MERGE
+=> 데이터 업데이트 관리
+
+@OneToOne(cascade = CascadeType.PERSIST)
+private Block block;
+
+void cascadeTest(){
+    givenPerson();
+
+    List<Person> people = personRepository.findAll();
+    Person person = people.get(0);
+
+    System.out.println(person);
+    System.out.println("====================");
+
+    person.getBlock().setStartDate(LocalDate.now());
+    person.getBlock().setEndDate(LocalDate.now().plusWeeks(3));
+    personRepository.save(person);
+
+    personRepository.findAll().forEach(System.out::println);
+}
+=> 위의 코드를 실행하면 set을 했음에도 불구하고 값이 변경되지 않는다는
+   사실을 알 수 있다.
+
+Person에 코드를 아래와 같이 수정하고 위의 코드를 다시 실행해보자
+@OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+private Block block;
+=> 수정한 값들이 변경되어 저장된다.
+
+--------------------------------------
+
+3) CascadeType.REMOVE
+=> 삭제 관리
+
+personRepository.delete(person);
+personRepository.findAll().forEach(System.out::println);
+System.out.println("----");
+blockRepository.findAll().forEach(System.out::println);
+
+@OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+private Block block;
+인 상황에서 위의 코드를 수행하면 Person은 사라져도 block은 사라지지 않음을 알 수 있다.
+
+@OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE})
+private Block block;
+=> block이 함께 사라진다.
+
+--------------------------------------
+
+4) CascadeType.ALL
+=> remove, merge, persist 모두 가능
+
+위의 모든 설정들은 다음의 코드로 적용시킬 수 있다.
+@OneToOne(cascade = CascadeType.ALL)
+private Block block;
+
+--------------------------------------
+
+5) orphanRemoval
+=> 연관 관계 해지 시 데이터 삭제
+
+personServiceTest의 cascadeTest()에서
+    @OneToOne(cascade = CascadeType.ALL)일때
+
+person.setBlock(null);
+personRepository.save(person);
+personRepository.findAll().forEach(System.out::println);
+blockRepository.findAll().forEach(System.out::println);
+=> 결과
+   설정되어 있던 block이 null로 변함
+   block은 삭제되지 않고 남아있다.
+
+@OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
+private Block block;
+=> block도 함께 삭제된다.
+
+=====================================================================
+
+2. FetchType
+
+1) FetchType.EAGER / 비추
+=> 쿼리를 이용해 한번에 조건에 맞는 데이터를 가져오는 기능
+=> 비추 : 사용하다 보면 예상하지 못한 조인이 발생하는 경우가 많다 = 성능 저하
+
+- Person 코드 수정
+@OneToOne(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+private Block block;
+
+- PersonService 코드 추가
+public Person getPerson(Long id){
+    Person person = personRepository.findById(id).get(); //get = optional에서 값을 가져오는 기능
+    log.info("person: {}", person);
+    return person;
+}
+
+=> 쿼리문 확인
+select person0_.id as id1_1_0_, person0_.address as address2_1_0_, person0_.age as age3_1_0_, person0_.birthday as birthday4_1_0_, person0_.block_id as block_i10_1_0_, person0_.blood_type as blood_ty5_1_0_, person0_.hobby as hobby6_1_0_, person0_.job as job7_1_0_, person0_.name as name8_1_0_, person0_.phone_number as phone_nu9_1_0_, block1_.id as id1_0_1_, block1_.end_date as end_date2_0_1_, block1_.name as name3_0_1_, block1_.reason as reason4_0_1_, block1_.start_date as start_da5_0_1_ from person person0_ left outer join block block1_ on person0_.block_id=block1_.id where person0_.id=?
+== left outer join
+
+--------------------------------------
+
+2) FetchType.LAZY
+=> 로딩되는 시점에서 proxy 객체로 가져오고 후에 실제 객체를 사용할 때
+   DB에 쿼리를 보내 데이터를 가져온다.
+
+@OneToOne(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+private Block block;
+
+@Transactional
+public Person getPerson(Long id){~~}
+
+=> 쿼리문 확인
+쿼리가 하나 선택되고 블록에 대해서 select를 진행한다.
+-> 필요한 때에 쿼리문을 실행한다.
+
+--------------------------------------
+
+3) optional
+=> 데이터 null 가능 여부. true = 가능.
+
+@OneToOne(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER, optional = false)
+private Block block;
+
+위와 같이 변경하면 : block이 항상 필요하다는 의미.
+=> givenPerson으로 생성하던 사람들을 givenBlockPerson으로 생성
+   givenPerson으로 생성시 오류발생
+
+=> 결과
+   쿼리가 inner join으로 변경되어 있다.

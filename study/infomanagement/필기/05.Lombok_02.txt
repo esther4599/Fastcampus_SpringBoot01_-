@@ -1,0 +1,126 @@
+
+1. lombok @Constructor
+
+2. lombok @EqualsAndHashCode
+
+3. Lombok @Data
+
+=====================================================================
+
+1. Constructor
+생성자 -> 입력받는 매개변수 중요
+
+@NoArgsConstructor => 기본생성자 = 매개변수 없음
+
+@AllArgsConstructor => 모든 멤버변수를 매개변수로 입력받는 생성자
+
+@RequiredArgsConstructor => 필수적인 인자만 @NonNull로 표시해 이를 입력받는 생성자를 만들 수 있다.
+
+=====================================================================
+
+2. Hash code와 equals
+java 관련 서적 지침 : hash code, equals, toString => 항상 overriding 하길 권유
+hash code => 객체의 주소값을 이용하여 객체 고유의 해시코드를 리턴하는 함수
+equals => 해당 객체가 같은 값을 갖는지 확인
+
+1) equals()
+//아래 코드는 test class에서 작성
+    @Test
+    void hashCodeAndEquals(){
+        Person person1 = new Person("홍길동", 20);
+        Person person2 = new Person("홍길동", 20);
+
+        System.out.println(person1.hashCode()); //1117024013
+        System.out.println(person2.hashCode()); //253112801
+        System.out.println(person1.equals(person2)); //false
+    }
+
+Person의 맴버변수 값이 동일하면 person1.equals(person2)이 true가 나오게 만들고 싶다면
+person에 equals를 override한다.
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Person)) return false;
+        Person person = (Person) o;
+        return getAge() == person.getAge() &&
+                Objects.equals(this.id, person.getId()) &&
+                Objects.equals(this.name, person.getName()) &&
+                Objects.equals(this.hobby, person.getHobby()) &&
+                Objects.equals(this.bloodType, person.getBloodType()) &&
+                Objects.equals(this.address, person.getAddress()) &&
+                Objects.equals(this.birthday, person.getBirthday()) &&
+                Objects.equals(this.job, person.getJob()) &&
+                Objects.equals(this.phoneNumber, person.getPhoneNumber());
+    }
+
+위와 같은 함수를 추가하면
+System.out.println(person1.equals(person2));
+위의 함수를 실행시 true가 나온다.
+
+------------------------------------------------
+
+2) hashCode()
+test에서
+
+    Map<Person, Integer> map = new HashMap<>();
+    map.put(person1, person1.getAge());
+
+    System.out.println(map); //{Person(id=null, name=홍길동, age=20, hobby=null, bloodType=null, birthday=null, job=null)=20}
+
+    //get() = key 값으로 검색해 value 가져오기
+    // key = 객체의 hash 값
+    System.out.println(map.get(person2)); //null
+    System.out.println(map.get(person1)); //20
+
+아래의 두 결과를 같게 만들고 싶으면 Person에 아래와 같은 함수를 추가한다.
+    @Override
+    public int hashCode() {
+        return Objects.hash(getName(), getAge());
+        //return (name + age).hashCode(); 도 가능
+    }
+
+실행 결과
+20
+20
+
+------------------------------------------------
+
+3) equalsAnsHashCode
+구현이 누락되어 다른 객체가 같은 객체로 인식되는 경우가 있다.
+ex)
+    Person person1 = new Person("홍길동", 20, "B+");
+    Person person2 = new Person("홍길동", 20, "B-");
+
+    public int hashCode() {
+            return Objects.hash(getName(), getAge());
+    }
+
+이런 상황을 해결하기 위해 lombok에서 equalsAnsHashCode를 사용한다.
+일단 Person에서 구현한 equals(), hashCode()를 모두 지운다.
+
+Person에 아래의 코드 추가
+@EqualsAndHashCode
+
+- 블러드 타입이 다르면
+map.put(person1, person1.getAge());
+=> person2는 없는 상태
+
+false => person1.equals(person2)
+null => map.get(person2)
+20 => map.get(person1)
+
+-블러드 타입이 같으면
+true => person1.equals(person2)
+20 => map.get(person2)
+20 => map.get(person1)
+
+=====================================================================
+
+@Data
+= Getter + Setter + ToString + EqualsAndHashCode
+  + lombok.Value + RequiredArgsConstructor
+
+하지만 Person에 RequiredArgsConstructor 없으면 오류난다....
+RequiredArgsConstructor는 적어주자....
+
+Data의 경우 문제가 있는 부분이 있어 사용 여부에 의견이 많다.

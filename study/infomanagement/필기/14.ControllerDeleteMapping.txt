@@ -1,0 +1,101 @@
+1. @DeleteMapping
+
+2. @Where : JPA
+
+3. Person 정보를 삭제하는 API
+
+=====================================================================
+
+1. @DeleteMapping
+
+-personController
+@DeleteMapping("/{id}")
+public void deletePerson(@PathVariable Long id){
+    personService.delete(id);
+    log.info("person -> {}", personRepository.findAll());
+}
+
+-personService
+@Transactional
+public void delete(Long id) {
+    personRepository.deleteById(id);
+}
+
+-personControllerTest : 리팩토링 + deleteTest
+
+@BeforeEach //해당 메소드는 매 테스트 전에 먼저 실행된다.
+void beforeEach(){
+    mockMvc = MockMvcBuilders.standaloneSetup(personController).build();
+}
+
+@Test
+void deletePerson() throws Exception{
+    mockMvc.perform(
+            MockMvcRequestBuilders.delete("/api/person/1"))
+            .andDo(print())
+            .andExpect(status().isOk());
+}
+
+-----------------------------------
+
+위의 수정된 코드들은 디비에서 데이터를 바로 삭제하는 코드.
+이 경우 되돌리는 기능은 불가능하다. => flag 를 통한 soft delete 를 실제로 많이 사용하고 있다.
+
+-Person
+@ColumnDefault("0") //0 = false
+private boolean deleted; //삭제 여부 저장
+
+-PersonService
+@Transactional
+public void delete(Long id) {
+    Person person = personRepository.findById(id).orElseThrow(() -> new RuntimeException("아이디가 존재하지 않습니다."));
+    person.setDeleted(true);
+    personRepository.save(person);
+}
+
+--실행 결과
+id가 1인 사람이 출력은 되지만 deleted 값이 true로 나온다.
+
+=====================================================================
+
+위의 코드의 경우 삭제된 사람이 출력될 수 있다는 문제가 있다.
+
+2. @Where : JPA
+
+-person
+@Where(clause = "deleted = false")를 Person 객체 위에 추가한다.
+=> deleted가 false인 객체들, 즉 삭제가 되지 않은 객체들만 출력한다.
+
+--실행 결과
+deletePerson에서 id가 1인 사람은 출력되지 않는다.
+
+-----------------------------------
+
+deleted = true 인 값도 출력하는 법
+
+- personRepository
+@Query(value = "select * from Person person where person.deleted = true")
+List<Person> findPeopleDeleted();
+
+- personControllerTest
+@Slf4j => 클래스에 추가
+
+@Autowired
+private PersonRepository personRepository;
+
+@Test
+void deletePerson() throws Exception{
+    mockMvc.perform(
+            MockMvcRequestBuilders.delete("/api/person/1"))
+            .andDo(print())
+            .andExpect(status().isOk());
+
+    //아래 코드 추가됨
+    log.info("people deleted : {}", personRepository.findPeopleDeleted());
+}
+
+-person => 현재 where에서 deleted = false를 조건으로 주고 있다. ** nativeQuery 활용 **
+@Query(value = "select person from Person person where person.deleted = true", nativeQuery = true)
+List<Person> findPeopleDeleted();
+
+==> person.deleted = true인 사람들이 모두 출력된다.

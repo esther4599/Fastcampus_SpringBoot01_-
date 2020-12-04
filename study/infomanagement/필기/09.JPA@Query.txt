@@ -1,0 +1,159 @@
+1. @Embedded, @Embeddable
+
+2. @Valid
+
+3. @Query
+
+=====================================================================
+
+1. @Embedded, @Embeddable
+
+- DTO package 만들기 -> Birthday class 생성
+@Data
+@AllArgs
+@NoArgs
+@Embeddable //entity에 속해있는 dto 라는 것을 표시
+public class Birthday {
+    private int yearOfBirthday;
+    private int monthOfBirthday;
+    private int dayOfBirthday;
+}
+위와 같은 코드를 작성한다.
+
+-Person
+private LocalDate birthday; 를
+
+@Embedded
+private Birthday birthday; 로 변경
+
+=====================================================================
+
+3. @Query = jpql 문법을 사용
+
+1) 함수 기능 정상적으로 수정
+
+-PeronServiceTest
+
+    ***embedded 한 값은 null이 되면 안된다.***
+    private void givenPerson() {
+//        givenBlockPerson("홍길동",10,"A");
+        givenPerson("홍길동",18,"O", LocalDate.of(1991, 8,18));
+        givenPerson("허균", 40, "B", LocalDate.of(1992, 8,28));
+        givenPerson("허준", 60, "AB", LocalDate.of(1994, 9,1));
+        givenPerson("황진이", 24, "B",LocalDate.of(1995, 1,6));
+    }
+    @Test
+    void findByBirthday(){
+        givenPerson();
+
+        List<Person> people = personRepository.findByMonthOfBirthday(8);
+        people.forEach(System.out::println);
+    }
+
+-PersonRepository 수정
+    @Query(value = "select person from Person person where person.birthday.monthOfBirthday = ?1")
+    List<Person> findByMonthOFBirthday(int month);
+
+-실행 결과
+생일이 8월인 모든 사람이 출력된다.
+
+--------------------------------------
+
+2) 연습. 생일의 월 일이 조건과 같은 사람 출력
+
+-PersonRepository 수정
+    @Query(value = "select person from Person person where person.birthday.monthOfBirthday = ?1 and person.birthday.dayOfBirthday = ?2")
+    List<Person> findByMonthOfBirthday(int monthOfBirthday, int dayOfBirthday);
+
+-personServiceTest
+    @Test
+    void findByBirthday(){
+        givenPerson();
+
+        List<Person> people = personRepository.findByMonthOfBirthday(8, 28);
+        people.forEach(System.out::println);
+    }
+
+-실행 결과
+생일이 8월 28일인 사람 출력
+
+--------------------------------------
+
+3) @Param() => jpql 에서 변수명 정해주기 <?1 형식의 문법보다 본 문법 추천>
+
+    @Query(value = "select person from Person person where person.birthday.monthOfBirthday = :monthOfBirthday and person.birthday.dayOfBirthday = :dayOfBirthday")
+    List<Person> findByMonthOfBirthday(@Param("monthOfBirthday") int monthOfBirthday, @Param("dayOfBirthday") int dayOfBirthday);
+
+--------------------------------------
+
+4) jpql -> sql 로 : Query(nativeQuery = true)
+
+@Query(value = "select * from person where month_of_birthday = :monthOfBirthday and day_of_birthday = :dayOfBirthday"
+    , nativeQuery = true)
+    List<Person> findByMonthOfBirthday(@Param("monthOfBirthday") int monthOfBirthday, @Param("dayOfBirthday") int dayOfBirthday);
+
+=====================================================================
+
+2. Valid
+생일의 월이나 일의 경우 유효한 갓이 있다. 이를 문법적으로 체크하는 기능 valid
+
+1) 월 유효성 추가
+
+- build.gradle에 아래의 dependency 추가
+=> compile('org.springframework.boot:spring-boot-starter-validation')
+
+- Birthday
+public class Birthday {
+    private int yearOfBirthday;
+
+    @Min(1) @Max(12)
+    private int monthOfBirthday;
+
+    @Min(1) @Max(31)
+    private int dayOfBirthday;
+}
+
+- Person 아래 변수에 다음과 같은 주석 추가
+@Valid
+@Embedded
+private Birthday birthday;
+
+- 결과
+month로 13을 입력했을 때 아래와 같은 오류 발생
+Invalid value for MonthOfYear (valid values 1 - 12): 13
+
+--------------------------------------
+
+2) 일 유효성 추가
+=> 일은 월마다 다르다.
+
+- Birthday
+public class Birthday {
+    private int yearOfBirthday;
+
+    @Min(1) @Max(12)
+    private int monthOfBirthday;
+
+    @Min(1) @Max(31)
+    private int dayOfBirthday;
+
+    //아래 함수 추가됨
+    public Birthday(LocalDate birthday){
+        this.yearOfBirthday = birthday.getYear();
+        this.monthOfBirthday = birthday.getMonthValue();
+        this.dayOfBirthday = birthday.getDayOfMonth();
+    }
+}
+
+- PersonServiceTest
+    private void givenPerson(String name, int age, String bloodType, LocalDate birthday) {
+        Person person = new Person(name,age,bloodType);
+        person.setBirthday(new Birthday(birthday); //수정
+        personRepository.save(person);
+    }
+
+-실행 결과
+2월 30일 입력시 Invalid date 'FEBRUARY 30' 오류 발생
+
+==> LocalDate를 Birthday에 가져와 멤버 변수를 저장함으로써 오류를 제거할 수 있다.
+==> valid 굳이 필요없음

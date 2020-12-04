@@ -1,0 +1,173 @@
+
+1. @PutMapping
+
+2. @PatchMapping
+
+3. Person 정보를 수정하는 API 생성
+
+=====================================================================
+
+1. @PutMapping
+
+-personController
+@PutMapping("{id}")
+public void modifyPerson(@PathVariable Long id, @RequestBody Person person){
+    personService.modify(id, person);
+    log.info("person -> {}", personRepository.findAll());
+}
+
+-personService
+ @Transactional
+public void modify(Long id, Person person) {
+
+    Person personAtDB = personRepository.findById(id).orElseThrow(() -> new RuntimeException("아이디가 존재하지 않습니다.")); //null인 경우 오류 발생
+
+    personAtDB.setName(person.getName());
+    personAtDB.setAge(person.getAge());
+    personAtDB.setHobby(person.getHobby());
+    personAtDB.setBloodType(person.getBloodType());
+    personAtDB.setAddress(person.getAddress());
+    personAtDB.setBirthday(person.getBirthday());
+    personAtDB.setJob(person.getJob());
+    personAtDB.setPhoneNumber(person.getPhoneNumber());
+
+    personRepository.save(personAtDB);
+}
+
+-personControllerTest
+ @Test
+void modifiedPerson() throws Exception{
+    mockMvc = MockMvcBuilders.standaloneSetup(personController).build();
+
+    mockMvc.perform(
+            MockMvcRequestBuilders.put("/api/person/1")
+            .contentType(MediaType.APPLICATION_JSON_UTF8)
+            .content("{ \"name\":\"홍길동\", \"age\":20, \"bloodType\":\"A\" }"))
+    .andDo(print())
+    .andExpect(status().isOk());
+}
+==> 위에 테스트 진행시 강사님은 발생하지 않는 오류 발생.... id가 1인 데이터가 없다는 에러...
+resources에 전에 만들었던 data.sql을 넣어서 실행. 성공
+
+=====================================================================
+
+2. PersonDTO 라는 별개의 모듈을 만들어 코딩 진행하기 + 이름이 같은 경우만 업데이트하기
+
+- domain.dto -> PersonDTO
+@Data
+public class PersonDTO {
+    private String name;
+    private int age;
+    private String hobby;
+    private String bloodType;
+    private String address;
+    private LocalDate birthday;
+    private String job;
+    private String phoneNumber;
+}
+
+-personController
+@PutMapping("/{id}")
+public void modifyPerson(@PathVariable Long id, @RequestBody PersonDTO persondto){
+    personService.modify(id, persondto);
+    log.info("person -> {}", personRepository.findAll());
+}
+
+-personService
+@Transactional
+public void modify(Long id, PersonDTO persondto) {
+
+    Person personAtDB = personRepository.findById(id).orElseThrow(() -> new RuntimeException("아이디가 존재하지 않습니다.")); //null인 경우 오류 발생
+
+    if (!personAtDB.getName().equals(persondto.getName()))
+        throw new RuntimeException("이름이 다릅니다.");
+    personAtDB.setName(persondto.getName());
+    personAtDB.setAge(persondto.getAge());
+    personAtDB.setHobby(persondto.getHobby());
+    personAtDB.setBloodType(persondto.getBloodType());
+    personAtDB.setAddress(persondto.getAddress());
+    //Birthday 는 localDate를 주면 자동으로 변환시켜 저장한다.
+    if(persondto.getBirthday() != null)
+        personAtDB.setBirthday(new Birthday(persondto.getBirthday()));
+    personAtDB.setJob(persondto.getJob());
+    personAtDB.setPhoneNumber(persondto.getPhoneNumber());
+
+    personRepository.save(personAtDB);
+}
+
+--------------------------------------
+
+위의 코드의 문제점은 content에서 작성하지 않은 변수들은 null이 된다는 사실이다.
+이를 수정해보자.
+
+-Person
+public void set(PersonDTO personDto){
+    if(personDto.getAge() != 0)
+        this.age = personDto.getAge();
+
+    if(!StringUtils.isEmpty(personDto.getHobby()))
+        this.hobby = personDto.getHobby();
+
+    if(!StringUtils.isEmpty(personDto.getBloodType()))
+        this.bloodType = personDto.getBloodType();
+
+    if(!StringUtils.isEmpty(personDto.getAddress()))
+        this.address = personDto.getAddress();
+
+    if(!StringUtils.isEmpty(personDto.getJob()))
+        this.job = personDto.getJob();
+
+    if(!StringUtils.isEmpty(personDto.getPhoneNumber()))
+        this.phoneNumber = personDto.getPhoneNumber();
+
+}
+
+-PersonService
+@Transactional
+public void modify(Long id, PersonDTO persondto) {
+
+    Person person = personRepository.findById(id). orElseThrow(() -> new RuntimeException("아이디가 존재하지 않습니다.")); //null인 경우 오류 발생
+
+    if (!person.getName().equals(persondto.getName()))
+        throw new RuntimeException("이름이 다릅니다.");
+
+    person.set(persondto);
+    personRepository.save(person);
+}
+
+=====================================================================
+
+3. @PatchMapping
+위의 기능에서는 이름이 변경되는 경우를 막았지만 가
+사실상 이름을 변경해야 하는 경우 필요할 수 있다.
+
+-personController
+@PatchMapping("/{id}")
+public void modifyPerson(@PathVariable Long id, String name){
+    personService.modify(id, name);
+    log.info("person -> {}", personRepository.findAll());
+}
+
+-personService
+@Transactional
+public void modify(Long id, String name) {
+    Person person = personRepository.findById(id).orElseThrow(() -> new RuntimeException("아이디가 존재하지 않습니다."));
+
+    person.setName(name);
+    personRepository.save(person);
+}
+
+-personControllerTest
+@Test
+void modifyName() throws Exception {
+    mockMvc = MockMvcBuilders.standaloneSetup(personController).build();
+
+    mockMvc.perform(
+            MockMvcRequestBuilders.patch("/api/person/1")
+            .param("name", "공유"))
+            .andDo(print())
+            .andExpect(status().isOk());
+}
+
+-실행 결과
+person -> [Person(id=1, name=공유, age=10, hobby=null, bloodType=A, address=null, birthday=Birthday(yearOfBirthday=1991, monthOfBirthday=8, dayOfBirthday=15), job=programmer)

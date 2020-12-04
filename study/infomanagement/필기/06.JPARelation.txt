@@ -1,0 +1,92 @@
+
+1. 추가 entity 생성을 통한 복습
+=> 기존의 entity test 및 lombok을 활용해 entity 확장
+
+2. @OneToOne Relation
+=> 테이블의 릴레이션 확인
+
+3. Java stream, filter, map
+
+=====================================================================
+
+1. 추가 entity 생성을 통한 복습
+
+- 차단 기능  : personService
+
+**stream
+List<String> blockNames = blockList.stream().map(Block::getName).collect(Collectors.toList());
+=> stream을 이용해 list의 각 멤버를 가져온다.
+=> map() = 가져온 데이터에서 필요한 정보를 변형해서 가져온다.
+
+**filter
+return personList.stream().filter(person -> !blockNames.contains(person.getName())).collect(Collectors.toList());
+=> lambda 사용. stream에서 가져온 Pesrson 객체를 person에 받아서
+   blockNames가 해당 person의 이름을 갖고있지 않다면 결과에 포함시킨다.
+
+=====================================================================
+
+2. relation 사용
+
+void getPeopleExcludeBlocks(){
+    givenPerson();
+    givenBlocks();
+
+    List<Person> result = personService.getPeopleExcludeBlocks(); //exclude의 핵심코드는 filter 필기에 보이는 ㅋㅗ드
+
+    result.forEach(System.out::println); // list의 각 객체가 한줄씩 노출된다.
+}
+
+givenPerson("홍길동",10,"A");
+givenPerson("홍길동",18,"O");
+givenPerson("허균", 40, "B");
+givenPerson("허준", 60, "AB");
+givenPerson("황진이", 24, "B");
+
+givenBlocks("홍길동");
+
+==> 위의 상황에서 서로 다른 두 홍길동 모두 차단이 된 상태로 출력된다.
+
+위와 같은 상황을 막고자 relation을 사용한다.
+
+- Person 코드 수정
+@OneToOne
+private Block block;
+
+- PersonService 코드 수정
+return personList.stream().filter(person -> person.getBlock() == null).collect(Collectors.toList());
+
+-PersonServiceTest 코드 수정
+
+private void givenPerson() {
+    givenBlockPerson("홍길동",10,"A"); // 이 부분이 수정됨
+    givenPerson("홍길동",18,"O");
+    givenPerson("허균", 40, "B");
+    givenPerson("허준", 60, "AB");
+    givenPerson("황진이", 24, "B");
+}
+
+//새로 추가
+private void givenBlockPerson(String name, int age, String bloodType){
+    Person blockPerson = new Person(name, age, bloodType);
+    blockPerson.setBlock(givenBlocks(name));
+
+    personRepository.save(blockPerson);
+}
+
+//아래 함수 삭제 -> 헤단 함수를 이용하는 코드 함께 삭제
+private void givenBlocks()
+
+=====================================================================
+
+위에 코드가 지저분한 것 같아서 수정한 코드
+
+personServiceTest
+
+private void givenBlockPerson(String name, int age, String bloodType){
+    Person blockPerson = new Person(name, age, bloodType);
+    blockPerson.setBlock(blockRepository.save(new Block(name)));
+
+    personRepository.save(blockPerson);
+}
+
+나머지 필요없어진 코드 삭제

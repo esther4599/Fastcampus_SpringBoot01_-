@@ -1,0 +1,41 @@
+
+오늘 강의에서 할 일
+
+1. hello world controller 만들기 (REST controller)
+
+2. boot run을 통해서 WAS 서버 실행해보기
+    => WEB 서버 : HTML, CSS, js, jpg 등 정적인 데이터를 처리하는 웹 서버
+       WAS(Web Application Server) 서버: JSP, ASP, PHP 등 사용자의 입력을 받아
+       서버에서 무언가를 처리하고 그 결과를 보여주는 동적인 데이터를 처리하는 웹서버
+
+=====================================================================
+
+@Controller : 해당 클래스가 프로젝트에서 controller bean 이라는 것을 표시
+
+@ResponseBody : 메소드에서 리턴되는 값은 View 를 통해서 출력되지 않고
+                HTTP Response Body 에 쓰여진다.
+
+RestController : 해당 파일에는 @Controller 와 @ResponseBody 주석이 달려있다.
+
+=====================================================================
+* API 확인하기
+
+터미널에서 프로젝트 시작 위치에 들어가서 ./gradlew bootRun 실행
+-> gradlew : gradle wrapper를 실행??
+   WAS 서버를 띄우겠다는 의미
+
+=> embed 되어있는 tomcat 서버 실행
+
+=> http://localhost:8080/api/helloWorld
+   : 결과 = 화면에 Hello World 있음
+
+=====================================================================
+* API 확인하는 시간 줄이기
+
+1. intelli J 상단에 있는 초록 세모 누르기...
+
+2. test 에서 http파일 생성 이름은 hello.http
+    => 파일 내용 : GET http://localhost:8080/api/helloWorld
+    후에 좌측의 초록 세모 클릭
+
+====> 2번의 경우 내 프로젝트에서 http 파일이 만들어지지 않음...
