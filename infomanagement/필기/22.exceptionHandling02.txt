@@ -1,0 +1,260 @@
+
+-personController
+@Test
+void modifyPersonIfNameIsDifferent() throws Exception{
+    PersonDTO personDTO = PersonDTO.of("james", "멍 때리기", "경기도 성남시 분당구 판교로",
+            LocalDate.now(), "programmer", "010-1111-2222");
+
+    Assertions.assertThrows(NestedServletException.class, () ->
+            mockMvc.perform(MockMvcRequestBuilders.put("/api/person/1")
+                    .contentType(MediaType.APPLICATION_JSON_UTF8)
+                    .content(toJsonString(personDTO)))
+            .andDo(print())
+            .andExpect(status().isOk()));
+}
+
+=> NestedServletException
+test에서 runtimeException이 발생 => assertThrow로 처리를 하고 넘어갔다.
+하지만 실제 api에서는 정확한 오류 메시지를 출력해주어야 한다.
+
+=> 내부 로직 상 처리가 완료되지 않고 오류가 발생하더라도 api 전달 값으로 오류 내용을 전달하는 것이 중요하다.
+=> 내부 로직 : 이름이 다르면 오류가 발생하도록 작성되어 있다. test에서 임의로 이름이 달라도 수정할 수 있는 test를 만든 것이다.
+
+========================================================================
+
+1) test를 실패로 끝내지 않고 오류 메시지 출력하도록 수정하기
+
+-PersonController : modifyPersonIfNameIsDifferent()
+@Test //이름이 잘못된 경우 이름과 내용을 함께 수정
+void modifyPersonIfNameIsDifferent() throws Exception{
+    PersonDTO personDTO = PersonDTO.of("james", "멍 때리기", "경기도 성남시 분당구 판교로",
+            LocalDate.now(), "programmer", "010-1111-2222");
+
+    //아래 코드 수정
+    mockMvc.perform(MockMvcRequestBuilders.put("/api/person/1")
+                    .contentType(MediaType.APPLICATION_JSON_UTF8)
+                    .content(toJsonString(personDTO)))
+            .andDo(print())
+            .andExpect(status().isOk());
+}
+
+-PersonController : modifyPerson(@PathVariable Long id, @RequestBody PersonDTO persondto)
+@PutMapping("/{id}")
+public void modifyPerson(@PathVariable Long id, @RequestBody PersonDTO persondto){
+    try {
+        personService.modify(id, persondto);
+    } catch (RuntimeException ex) {
+        log.error(ex.getMessage(), ex);
+    }
+}
+
+------------------------------------------
+
+2) ServiceController : Handler 이용하기
+위 방식은 좋은 방식은 아니다. 해당 로직이 제대로 작동이 되었는지를 test 결과로 알려주지 않기 때문이다.
+
+-handler
+//아이디는 같은데 이름은 다른 경우 오류 핸들러
+@ExceptionHandler(value = RenameNotPermittedException.class) //해당 클래스가 발생한 경우 여기로 연결
+public ResponseEntity<String> RenameNoPermittedException(RenameNotPermittedException ex)  {
+    return new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST);
+}
+
+-modify func
+@PutMapping("/{id}")
+public void modifyPerson(@PathVariable Long id, @RequestBody PersonDTO persondto){
+    personService.modify(id, persondto);
+}
+
+--실행 결과
+MockHttpServletResponse:
+Status = 400
+Error message = null
+Headers = [Content-Type:"application/json"]
+Content type = application/json
+ Body = "name is different"
+Forwarded URL = null
+Redirected URL = null
+Cookies = []
+
+------------------------------------------
+
+2) ServiceController : http body json 스타일로 변경하기
+
+- java.exception.dto.ErrorResponse
+@Data
+@AllArgsConstructor(staticName = "of")
+public class ErrorResponse {
+    private int code;
+    private String message;
+}
+
+-PersonController
+@ExceptionHandler(value = RenameNotPermittedException.class)
+public ResponseEntity<ErrorResponse> RenameNoPermittedException(RenameNotPermittedException ex)  {
+
+    //ResponseEntity의 파라미터는 body, header
+    return new ResponseEntity<>(ErrorResponse.of(HttpStatus.BAD_REQUEST.value(), ex.getMessage()), HttpStatus.BAD_REQUEST);
+    //입력 값 오류로 serverError(500)보다는 BAD_REQUEST(400)가 맞다.
+}
+
+--실행 결과 : json 형식으로 출력된다.
+Body = {"code":400,"message":"name is different"}
+
+------------------------------------------
+
+5) test가 성공할 수 있도록 수정하기 (지금까지는 아이디는 같은데 이름이 달라 실패)
+@Test //이름이 잘못된 경우 이름과 내용을 함께 수정
+void modifyPersonIfNameIsDifferent() throws Exception{
+    PersonDTO personDTO = PersonDTO.of("james", "멍 때리기", "경기도 성남시 분당구 판교로",
+            LocalDate.now(), "programmer", "010-1111-2222");
+
+    mockMvc.perform(MockMvcRequestBuilders.put("/api/person/1")
+                    .contentType(MediaType.APPLICATION_JSON_UTF8)
+                    .content(toJsonString(personDTO)))
+            .andDo(print())
+            //아래 코드 추가됨
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value(400))
+            .andExpect(jsonPath("$.message").value("name is different"));
+}
+
+========================================================================
+
+2. 위 test의 PersonNotFoundException이 발생하는 test 추가하기
+
+- PersonControllerTest
+@Test //id가 다른 경우
+void modifyPersonIfPersonNotFound() throws Exception {
+    PersonDTO dto = PersonDTO.of("james", "programming", "판교", LocalDate.now(), "programmer", "010-1111-2222");
+
+    mockMvc.perform(
+            MockMvcRequestBuilders.put("/api/person/10")
+            .contentType(MediaType.APPLICATION_JSON_UTF8)
+            .content(toJsonString(dto)))
+            .andDo(print())
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value(400))
+            .andExpect(jsonPath("$.message").value("entity is not found"));
+}
+
+- PersonController exception 등록
+@ExceptionHandler(value = PersonNotFoundException.class)
+public ResponseEntity<ErrorResponse> PersonNotFoundException(PersonNotFoundException ex){
+    return new ResponseEntity<>(ErrorResponse.of(HttpStatus.BAD_REQUEST.value(), ex.getMessage()), HttpStatus.BAD_REQUEST);
+}
+
+-- 실행 결과 : 성공
+
+========================================================================
+
+3.PersonControllerTest
+
+1) 코드 전반에 있는 print 문 수정하기
+
+- PersonControllerTest
+@BeforeEach //해당 메소드는 매 테스트 전에 먼저 실행된다.
+void beforeEach(){
+    mockMvc = MockMvcBuilders
+            .standaloneSetup(personController)
+            .setMessageConverters(massageConverter)
+            //아래 코드 추가
+            .alwaysDo(print())
+            .build();
+}
+=> 항상 자동으로 출력을 하게 한다.
+   반복적으로 사용하는 코드는 가능한 한 줄이자
+
+------------------------------------------
+
+2) PersonController의 HttpStatus.BAD_REQUEST.value() 반복 사용줄이기
+
+-ErrorResponse
+public static ErrorResponse of(@NotNull HttpStatus httpStatus, String message)
+{
+    return new ErrorResponse(httpStatus.value(), message);
+}
+
+-PersonController
+HttpStatus.~~.value => .value 지우기
+
+========================================================================
+
+4. PersonControllerTest : postPerson
+post의 흐름을 따라 service를 보았을 때 name 값이 없으면 시스템 상 오류가 발생한다.
+새로운 테스트 추가하기
+
+1) postPersonIfNameIsNull 오류가 발생하는 경우
+@Test //post에서 name이 null인 경우
+ void postPersonIfNameIsNull() throws Exception {
+     PersonDTO dto = new PersonDTO();
+
+     mockMvc.perform(
+             MockMvcRequestBuilders.post("/api/post")
+             .contentType(MediaType.APPLICATION_JSON_UTF8)
+             .content(toJsonString(dto)));
+ }
+ => name에 null이 입력된 경우 오류 발생하는 test
+
+------------------------------------------
+
+2) personController
+
+-PersonController
+@ExceptionHandler(value = RuntimeException.class)
+public ResponseEntity<ErrorResponse> handleRunTimeException(RuntimeException ex){
+    return new ResponseEntity<>(ErrorResponse.of(HttpStatus.INTERNAL_SERVER_ERROR.value(), ex.getMessage()), HttpStatus.INTERNAL_SERVER_ERROR);
+}
+
+-PersonControllerTest : postPersonIfNameIsNull() 실행 결과
+MockHttpServletResponse:
+           Status = 404
+    Error message = null
+          Headers = []
+     Content type = null
+             Body =
+    Forwarded URL = null
+   Redirected URL = null
+          Cookies = []
+
+=> RunTimeError의 경우 404 serverError가 적합하다.
+
+------------------------------------------
+
+3) 보안 높이기
+RuntimeException의 오류 메시지를 client에 노출하는 것은 보안에 취약하다. => 서버의 문제를 트랙킹할 수 있다.
+따라서 오류 안내메시지를 바꾼다. + 다른 예외의 경우 Exception 객체에서 log를 출력하므로 log 코드를 추가한다.
+
+- personController
+@ExceptionHandler(value = RuntimeException.class)
+public ResponseEntity<ErrorResponse> handleRunTimeException(RuntimeException ex){
+    log.error("server error: {}", ex.getMessage(), ex);
+    return new ResponseEntity<>(ErrorResponse.of(HttpStatus.INTERNAL_SERVER_ERROR, "can't find cause"), HttpStatus.INTERNAL_SERVER_ERROR);
+}
+
+--실행 결과
+MockHttpServletResponse:
+Status = 500
+Error message = null
+Headers = [Content-Type:"application/json"]
+Content type = application/json
+ Body = {"code":500,"message":"can't find cause"}
+Forwarded URL = null
+Redirected URL = null
+Cookies = []
+
+------------------------------------------
+
+4) log.error("server error: {}", ex.getMessage(), ex)의 ex 활용해서 검증하기
+=> 마지막에 오류 다음 함수로 넘기기
+
+@Test //post에서 name이 null인 경우
+void postPersonIfNameIsNull() throws Exception {
+    PersonDTO dto = new PersonDTO();
+    mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/person")
+            .contentType(MediaType.APPLICATION_JSON_UTF8)
+            .content(toJsonString(dto)))
+            .andExpect(jsonPath("$.code").value(500))
+            .andExpect(jsonPath(".message").value("can't find cause"));
+}

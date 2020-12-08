@@ -1,0 +1,181 @@
+
+목표: test의 검정력 높이기
+
+=====================================================================
+
+1. PersonControllerTest : deletePerson()
+=> 진짜 데이터가 삭제되었는디 확인하는 로직이 없다.
+
+1) controller에서 void return이 아닌 정상값 반환하기.
+
+- PersonController
+@DeleteMapping("/{id}")
+public boolean deletePerson(@PathVariable Long id){
+    personService.delete(id);
+    log.info("person -> {}", personRepository.findAll());
+
+    return true;
+}
+
+-PersonControllerTest
+@Test
+void deletePerson() throws Exception{
+    mockMvc.perform(
+            MockMvcRequestBuilders.delete("/api/person/1"))
+            .andDo(print())
+            .andExpect(status().isOk())
+            .andExpect(content().string("true")); //추가된 내용
+
+    log.info("people deleted : {}", personRepository.findPeopleDeleted());
+}
+
+--실행 결과
+Body = true
+=> 아직 삭제가 되었는지를 확인할 수 없는 코드로 부족한 코드인 상황이다.
+
+-----------------------------------------------------
+
+2) 삭제가 되었는지를 return에서 확인
+
+- PersonController
+@DeleteMapping("/{id}")
+public boolean deletePerson(@PathVariable Long id){
+    personService.delete(id);
+    log.info("person -> {}", personRepository.findAll());
+    return personRepository.findPeopleDeleted().stream().anyMatch(person -> person.getId().equals(id));
+}
+
+-----------------------------------------------------
+
+3) test가 아닌 main 코드를 수정하는 것은 좋은 코드가 아니다.
+
+- PersonController
+@DeleteMapping("/{id}")
+public void deletePerson(@PathVariable Long id){
+    personService.delete(id);
+    log.info("person -> {}", personRepository.findAll());
+}
+
+-personControllerTest
+@Test
+void deletePerson() throws Exception{
+    mockMvc.perform(
+            MockMvcRequestBuilders.delete("/api/person/1"))
+            .andDo(print())
+            .andExpect(status().isOk());
+
+    Assertions.assertTrue(personRepository.findPeopleDeleted().stream().anyMatch(person -> person.getId().equals(1L)));
+}
+
+==> test 관련 수정은 test에서 변경되는게 맞다.
+
+=====================================================================
+
+2. PersonControllerTest
+
+1)modifyName
+@Test
+void modifyName() throws Exception {
+    mockMvc.perform(
+            MockMvcRequestBuilders.patch("/api/person/1")
+            .param("name", "martinModified"))
+            .andDo(print())
+            .andExpect(status().isOk());
+    Assertions.assertTrue(personRepository.findById(1L).get().getName().equals("martinModified"));
+}
+
+-----------------------------------------------------
+
+2. PersonControllerTest
+
+2) modifiedPerson
+
+2-1) toJsonString
+
+- content() : ObjectMapper
+content() 에 원하는 json 형식의 데이터를 입력하는 것은 너무나도 불편하다.
+
+
+-testController
+@Autowired
+private ObjectMapper objectMapper;
+
+private String toJsonString(PersonDTO persondto) throws JsonProcessingException{
+    return objectMapper.writeValueAsString(persondto);
+}
+
+@Test
+void checkJsonString() throws JsonProcessingException {
+    PersonDTO personDTO = PersonDTO.builder()
+            .name("martin").birthday(LocalDate.now())
+            .address("경기도 분당시 분당구 판교").build();
+
+    System.out.println(">>>" + toJsonString(personDTO));
+}
+
+==> 위의 test 실행 결과 : {"name":"martin","hobby":null,"address":"경기도 분당시 분당구 판교","birthday":"2020-12-04","job":null,"phoneNumber":null}
+
+-----------------------------------------------------
+
+잘 실행되고 있음을 확인했으니 checkJsonString()은 삭제한다.
+
+2-2) modifiedPerson 수정
+=> peronDTO를 함수에서 만들어서 content 값을 넘긴다.
+
+-personDTO : @AllArgsConstructor(staticName = "of")
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor(staticName = "of")
+//birthday 객체에서 만들었듯이 생성자는 private로 만들고
+//of 생성자를 별도로 만들어 public으로 활용한다.
+public class PersonDTO {
+    private String name;
+    private String hobby;
+    private String address;
+    private LocalDate birthday;
+    private String job;
+    private String phoneNumber;
+}
+
+-personControllerTest
+@Test
+void modifiedPerson() throws Exception{
+    PersonDTO personDTO = PersonDTO.of("martin", "멍 때리기", "경기도 성남시 분당구 판교로",
+    LocalDate.now(), "programmer", "010-1111-2222");
+
+    mockMvc.perform(
+            MockMvcRequestBuilders.put("/api/person/1")
+            .contentType(MediaType.APPLICATION_JSON_UTF8)
+            .content(toJsonString(personDTO)))
+            .andDo(print())
+    .andExpect(status().isOk());
+
+    Person result = personRepository.findById(1L).get();
+
+    Assertions.assertAll(
+            () -> Assertions.assertEquals("martin", result.getName()),
+            () -> Assertions.assertEquals("멍 때리기", result.getHobby()),
+            () -> Assertions.assertEquals("경기도 성남시 분당구 판교로", result.getAddress()),
+            () -> Assertions.assertEquals(Birthday.of(LocalDate.now()), result.getBirthday()),
+            () -> Assertions.assertEquals("programmer", result.getJob()),
+            () -> Assertions.assertEquals("010-1111-2222", result.getPhoneNumber())
+    );
+}
+
+-----------------------------------------------------
+
+3) 이름과 내용을 함께 변경하는 코드 작성
+@Test
+void modifiedPersonIfNameIsDifferent() throws Exception{
+    PersonDTO personDTO = PersonDTO.of("james", "멍 때리기", "경기도 성남시 분당구 판교로",
+            LocalDate.now(), "programmer", "010-1111-2222");
+
+    Assertions.assertThrows(NestedServletException.class, () ->
+            mockMvc.perform(MockMvcRequestBuilders.put("/api/person/1")
+                    .contentType(MediaType.APPLICATION_JSON_UTF8)
+                    .content(toJsonString(personDTO)))
+            .andDo(print())
+            .andExpect(status().isOk()));
+}
+=> 예외가 발생하는 경우 람다에 작성한 코드 실행

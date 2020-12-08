@@ -1,0 +1,146 @@
+
+@SpringBootTest => spring context를 포함한 테스트
+service의 경우 위의 test가 필요하지 않다. spring context를 로드하는데 시간이 걸린다.
+
+- @SpringBootTest
+@ExtendWith(SpringExtension.class) => spring 관련 기능을 사용하곘다.
+
+service의 경우 test를 더 꼼꼼해야 하는 파트.
+**** mockito 라이브러리를 사용해 테스트를 진행한다.
+
+목표: test의 검정력 높이기
+
+=====================================================================
+
+1. PersonServiceTest : getPeopleByName()
+
+1) mockito 라이브러리 추가
+
+- build.gradle 의존성 추가
+testImplementation 'org.mockito:mockito-junit-jupiter'
+
+- PersonServiceTest
+@ExtendWith(MockitoExtension.class)
+=> @ExtendWith : 다른 기능을 사용하겠다는 주석
+=> MockitoExtension.class : 사용할 기능 명시
+=> @AutoWeird 는 동작하지 않는다.
+
+@InjectMocks //테스트의 대상이 되는 class에 붙는 주석
+private PersonService personService;
+
+@Mock //테스트하는 class에서 @Autowired하고 있는 class에 붙는 주석
+private PersonRepository personRepository;
+
+=> 위의 어노테이션은 자동으로 Mock을 만들어 주입해주다.
+
+--실행 결과
+위와 같이 수정하고 run하면 오류가 발생한다. 데이터를 하나도 가져오지 못하기 때문이다.
+spring context를 사용해서 data.sql을 통해 디비의 데이터를 조회하던 것과 달리
+Mock이라는 빈 껍데기 repository로 선언했기 때문이다.
+따라서 Mock이 어떻게 동작할지는 test에서 직접 지정해 주어야 한다.
+
+----------------------------------------------
+
+2) mockito test 작성
+
+@Test
+void getPeopleByName(){
+    //when == if : findByName이 호출되면
+    when(personRepository.findByName("martin"))
+    //thenReturn : 파라미터를 return 한다.
+            .thenReturn(Lists.newArrayList(new Person("martin")));
+    //=> 실제로 findByName이 호출되는 것이 아니라 호출되었다고 가정을 하는 것이다.
+
+    List<Person> result = personService.getPeopleByName("martin");
+
+    Assertions.assertThat(result.size()).isEqualTo(1);
+    Assertions.assertThat(result.get(0).getName()).isEqualTo("martin");
+}
+
+==> 정말 가정이고 findById를 호출하지 않는지 확인하기.
+
+-PersonRepository
+//아래와 같이 말도 안 되는 쿼리를 적성해 실행해보기. => 만약 해당 함수가 호출된다면 오류가 발생해야 한다.
+@Query(value = "select person from Person person where person.address = :name")
+    List<Person> findByName(@Param("name") String name);
+=> 호출되지 않기 때문에 성공적으로 test가 실행된다.
+
+----------------------------------------------
+
+왜 mock을 사용하는가??
+test는 코드 변화에 민감하게 반응을 해야 한다고 했다.
+
+person repository의 동작은 personService에서 검정할 필요가 없다. = 단위 테스트의 본질
+이 규칙을 지켜 더 빠르고 섬세하게 대상을 테스트할 수 있다.
+
+=====================================================================
+
+2. PersonServiceTest : getPerson()
+
+1) service의 getPerson이 객체를 반환하는 경우 : getPerson
+=> getPeopleByName과 다르게 orElse 코드가 존재한다. = mock의 장점을 살펴볼 수 있는 기회이다.
+@Test
+void getPerson(){
+    when(personRepository.findById(1L)).thenReturn(Optional.of(new Person("martin")));
+    Person person = personService.getPerson(1L);
+
+    Assertions.assertThat(person.getName()).isEqualTo("martin");
+}
+
+----------------------------------------------
+
+2) service의 getPerson에서 null이 return되는 경우 test
+ @Test
+void getPersonIfNotFound(){
+    when(personRepository.findById(1L)).thenReturn(Optional.empty()); //null인 Optional 반환
+
+    Person person = personService.getPerson(1L);
+    Assertions.assertThat(person).isNull();
+}
+
+----------------------------------------------
+
+만약 위의 테스트를 springTest에서 진행했다면 각 상황에 맞는 데이터를 저장해서 진행해야 한다.
+mock이 간단하게 test를 진행할 수 있도록 함을 알 수 있다.
+
+=====================================================================
+
+2. PersonServiceTest : putPerson()
+
+1) putPerson() mock으로 작성하기
+
+ @Test
+void put(){
+    PersonDTO personDTO = PersonDTO.of("martin", "programming", "판교시",
+            LocalDate.now(), "programmer", "010-1111-2222");
+    personService.put(personDTO);
+}
+
+==> 위 코드의 이상한 점
+ㄱ) 위의 코드는 mock이 save()될 때의 행동을 지정하지 않고 있다.
+personService.put(personDTO)의 경우 service에 repository서로 넘어가고
+아무런 동작도 발생하지 않는 것이다.
+위와 같이 test code를 작성하는 이유는??
+** mock으로 test를 만들 때는 return이나 exception이 일어나는 동작에만 행동을 지정하여 검사한다.
+
+ㄴ) 추가적인 데이터 검증이 없다. = Assertion이 없다.
+
+----------------------------------------------
+
+2) putPerson() 보완
+= 위의 이상한 점들을 보완할 수 있는 코드 => verify()
+
+@Test
+void put(){
+    PersonDTO personDTO = PersonDTO.of("martin", "programming", "판교시",
+            LocalDate.now(), "programmer", "010-1111-2222");
+    personService.put(personDTO);
+
+    //personRepository를 save라는 액션이 실행되었는지를 확인해보겠다.
+    //save에 대한 파라미터 형식은 Person.class인지 확인한다.
+    //times = 실행 횟수를 확인한다. + never() = 실행한 적 없음
+    Mockito.verify(personRepository, times(1)).save(Mockito.any(Person.class));
+}
+
+--실행 결과
+위의 코드는 personRepository에서 save()를 했는지 안 했는지를 확인할 수 있다.

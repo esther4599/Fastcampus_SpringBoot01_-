@@ -1,0 +1,175 @@
+
+목표: test의 검정력 높이기
+
+=====================================================================
+
+1) PersonControllerTest : getPerson
+
+-getPerson
+get의 경우 return 값이 존재하기 때문에 andExpect()를 통해 검정이 가능하다.
+
+//기존 코드
+.andExpect(jsonPath("$.name").value("martin"));
+=> jsonPath를 이용하는 이유는 body = content에서 받은 정보는
+json으로 들어오기 때문이다. $ = 정식 사용방법...? 없어도 오류가 발생하지는 않는다.
+
+//수정된 코드
+@Test
+void getPerson() throws Exception{
+    mockMvc.perform(
+            MockMvcRequestBuilders.get("/api/person/1"))
+            .andDo(print())
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value("martin"))
+            .andExpect(jsonPath("hobby").isEmpty())
+            .andExpect(jsonPath("address").isEmpty())
+            .andExpect(jsonPath("$.birthday").value("1991-08-15"))
+            .andExpect(jsonPath("$.job").isEmpty())
+            .andExpect(jsonPath("$.phoneNumber").isEmpty())
+            .andExpect(jsonPath("$.deleted").value(false))
+            .andExpect(jsonPath("$.age").isNumber()) //변하는 값은 타입을 확인 //숫자인지 확인
+            .andExpect(jsonPath("$.birthdayToday").isBoolean()); //변하는 값은 타입을 확인
+}
+
+-----------------------------------------------------
+
+>> birthday의 년 월 일 => 1991-08-15 형식으로 만들기
+    ==== LocalDate의 형식이 이와 같다.
+
+- infomanagement.configuration.serializer : BirthdaySerializer
+public class BirthdaySerializer extends JsonSerializer<Birthday> {
+    @Override
+    public void serialize(Birthday value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+        if(value != null)
+            gen.writeObject(LocalDate.of(value.getYearOfBirthday(), value.getMonthOfBirthday(), value.getDayOfBirthday()));
+    }
+}
+
+- infomanagement.configuration : JsonConfig = serializer를 spring에 맵핑해주는 역할
+@Configuration //2개 이상의 Bean을 가짐을 의미
+public class JsonConfig {
+
+    @Bean
+    //ObjectMapper를 주입하는 역할
+    public MappingJackson2HttpMessageConverter MappingJackson2HttpMessageConverter(ObjectMapper objectMapper) {
+        MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter();
+        converter.setObjectMapper(objectMapper);
+
+        return converter;
+    }
+
+    @Bean
+    //실제로 customizing할 부분
+    public ObjectMapper objectMapper(){
+        ObjectMapper objectMapper = new ObjectMapper(); //기본 맵퍼
+        objectMapper.registerModule(new BirthdayModule()); //작성한 serializer 추가
+        objectMapper.registerModule(new JavaTimeModule()); // 작성하지 않으면 LocalDate.now()가 엄청 복잡하게 출력된다.
+
+        //19988-01-01 의 형식으로 출력될 수 있도록 설정
+        objectMapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
+
+        return objectMapper;
+    }
+
+    //모듈
+    static class BirthdayModule extends SimpleModule {
+        BirthdayModule(){
+            super(); //부모 class의 생성자 호출
+
+            //birthday class에 BirthdaySerializer를 사용하겠다.
+            addSerializer(Birthday.class, new BirthdaySerializer());
+        }
+    }
+}
+
+serializer를 Module이 담고
+Mapper는 Module을 담는다.
+Converter는 Mapper를 담아서 java에서 사용할 수 있게 해준다.
+
+-PersonControllerTest
+@Autowired
+private MappingJackson2HttpMessageConverter massageConverter;
+
+@BeforeEach //해당 메소드는 매 테스트 전에 먼저 실행된다.
+void beforeEach(){
+    mockMvc = MockMvcBuilders.standaloneSetup(personController).setMessageConverters(massageConverter).build();
+}
+
+현재 위에서 작성한 converter는 적용되지 않은 상태이다.
+
+=====================================================================
+
+1) PersonControllerTest : postPerson
+
+- Personcontroller 수정 전 코드
+@PostMapping
+@ResponseStatus(HttpStatus.CREATED) //201 response = okay와 동일하게 200번대 성공을 의미. 해당 정보가 생성되었음을 좀 더 명확하게 알려주는 코드.
+public void postPerson(@RequestBody Person person){
+    personService.put(person);
+}
+위의 코드처럼 entity를 함수에서 주고 받는 것은 좋은 일이 아니다. 사용자의 입력으로 결정되지 않는 데이터가 존재하기 때문이다.
+=> personDTO 활용하기
+
+- PersonControllerTest
+@Test
+void postPerson() throws Exception{
+    PersonDTO dto = PersonDTO.of("martin", "멍 때리기", "경기도 성남시 분당구 판교로",
+            LocalDate.now(), "programmer", "010-1111-2222");
+
+    mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/person")
+            .contentType(MediaType.APPLICATION_JSON_UTF8)
+            .content(toJsonString(dto))) // 오류 발생 지점
+            .andDo(print())
+            .andExpect(status().isCreated());
+}
+=> 위의 코드는 에러가 발생한다.
+Person에 저장해야 하는데 데이터로 personDTO를 넘겨줌.
+dto.birthday = LocalDate / person의 birthday는 Birthday 객체
+-----------------------------------------------------
+
+-PersonController
+public void postPerson(@RequestBody PersonDTO personDTO){
+    personService.put(personDTO);
+}
+// Person -> PersonDTO
+
+-PersonService
+@Transactional
+public void put(PersonDTO personDTO) {
+    Person person = new Person();
+    person.set(personDTO);
+    person.setName(personDTO.getName());
+    personRepository.save(person);
+}
+
+--실행 결과
+값이 정상적으로 들어간다.
+
+----------------------------------------------------
+
+-controller에서 검증
+@Test
+void postPerson() throws Exception{ //사람 추가
+    PersonDTO dto = PersonDTO.of("martin", "멍 때리기", "경기도 성남시 분당구 판교로",
+            LocalDate.now(), "programmer", "010-1111-2222");
+
+    mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/person")
+            .contentType(MediaType.APPLICATION_JSON_UTF8)
+            .content(toJsonString(dto))) //Person에 저장해야 하는데 데이터로 personDTO를 넘겨줌.
+            .andDo(print())
+            .andExpect(status().isCreated());
+
+    //가장 최근에 추가된 객체의 id가 가장 큼. 가장 최근의 데이터 가져오기.
+    Person result = personRepository.findAll(Sort.by(Sort.Direction.DESC, "id")).get(0);
+
+    Assertions.assertAll(
+            () -> Assertions.assertEquals("martin", result.getName()),
+            () -> Assertions.assertEquals("멍 때리기", result.getHobby()),
+            () -> Assertions.assertEquals("경기도 성남시 분당구 판교로", result.getAddress()),
+            () -> Assertions.assertEquals(Birthday.of(LocalDate.now()), result.getBirthday()),
+            () -> Assertions.assertEquals("programmer", result.getJob()),
+            () -> Assertions.assertEquals("010-1111-2222", result.getPhoneNumber())
+    );
+}

@@ -1,0 +1,157 @@
+
+목표: test의 검정력 높이기
+
+PersonServiceTest : modify()
++ test coverage : test를 수치로 측정하는 방법
+
+본질적으로 향후 코드 변경에 따라 오류가 발생할 수 있는 부분을 확인하는 것이 test의 목표
+분기문은 오류가 발생하기 좋은 부분 => 각 분기별 test를 진행해야 한다.
+
+=====================================================================
+
+1. PersonServiceTest : modify(Long id, PersonDTO persondto)
+
+아래의 세 함수에서 공통으로 사용될 함수로 PersonServiceTest에 작성한다.
+private PersonDTO mockPersonDto(){
+    return PersonDTO.of("martin", "programming", "판교시",
+            LocalDate.now(), "programmer", "010-1111-2222");
+}
+
+----------------------------------------------
+
+1) modifyIfPersonNotFound() : 해당 사람이 존재하지 않는 경우
+@Test
+void modifyIfPersonNotFound(){
+    when(personRepository.findById(1L))
+            .thenReturn(Optional.empty());
+
+    //실행을 시키면 RuntimeException 예외가 발생할 것
+    assertThrows(RuntimeException.class, () -> personService.modify(1L, mockPersonDto()));
+}
+
+----------------------------------------------
+
+2) modifyPersonIfNameIsDifferent() : 수정을 요청했는데 이름이 다른 경우
+@Test
+void modifyPersonIfNameIsDifferent(){
+    when(personRepository.findById(1L))
+            .thenReturn(Optional.of(new Person("tony"))); //이름이 다른 경우 테스트이니 DTO와 다른 이름 입력.
+    assertThrows(RuntimeException.class, () -> personService.modify(1L, mockPersonDto()));
+}
+
+----------------------------------------------
+
+3) modify() : 사람이 존재하며 이름이 동일한 경우
+@Test
+void modify(){
+    when(personRepository.findById(1L))
+            .thenReturn(Optional.of(new Person("martin"))); //이름이 같은 경우 test
+
+    personService.modify(1L, mockPersonDto());
+    Mockito.verify(personRepository, times(1)).save(Mockito.any(Person.class));
+}
+
+----------------------------------------------
+
+4) modify() : 사람이 존재하며 이름이 동일한 경우 : 고급 test 방법
+==> test는 중요한 서비스 로직에 변경이 있을 때 알려주어야 한다.
+    modify의 가장 중요한 logic은 person.set()이다. //사람의 정보를 수정하는 함수. 저장은 X
+
+-PersonServiceTest에 아래의 class 추가
+ private static class IsPersonWillBeUpdated implements ArgumentMatcher<Person>{
+    @Override
+    public boolean matches(Person person) {
+        return person.getName().equals("martin")
+                && person.getHobby().equals("programming")
+                && person.getAddress().equals("판교시")
+                && person.getBirthday().equals(Birthday.of(LocalDate.now()))
+                && person.getJob().equals("programmer")
+                && person.getPhoneNumber().equals("010-1111-2222");
+    }
+}
+
+- PersonServiceTest : modify()
+@Test
+void modify(){
+    when(personRepository.findById(1L))
+            .thenReturn(Optional.of(new Person("martin"))); //이름이 같은 경우 test
+
+    personService.modify(1L, mockPersonDto());
+//        Mockito.verify(personRepository, times(1)).save(Mockito.any(Person.class));
+
+    //argThat() => argument에 대한 검증을 하는 함수
+    Mockito.verify(personRepository, times(1)).save(argThat(new IsPersonWillBeUpdated()));
+}
+
+=====================================================================
+
+2. PersonServiceTest : modify(Long id, String name)
+
+1) modify(Long id, String name) : id가 존재하지 않는 경우
+
+@Test
+void modifyByNameIfPersonNotFound(){
+    when(personRepository.findById(1L)).thenReturn(Optional.empty());
+
+    assertThrows(RuntimeException.class, () -> personService.modify(1L, "daniel"));
+}
+
+----------------------------------------------
+
+2) modify(Long id, String name) : 제대로 수정이 된 경우
+
+- matcher 생성
+private static class IsNameWillBeUpdated implements ArgumentMatcher<Person> {
+    @Override
+    public boolean matches(Person person) {
+        return person.getName().equals("daniel");
+    }
+}
+
+- test 생성
+@Test
+void modifyByName(){
+    when(personRepository.findById(1L)).thenReturn(Optional.of(new Person("martin")));
+
+    personService.modify(1L, "daniel");
+    Mockito.verify(personRepository, times(1)).save(argThat(new IsNameWillBeUpdated()));
+}
+
+=====================================================================
+
+3. PersonServiceTest : delete()
+
+1) id가 존재하지 않는 경우
+@Test
+void deleteIfPersonNotFound(){
+    when(personRepository.findById(1L)).thenReturn(Optional.empty());
+
+    assertThrows(RuntimeException.class, () -> personService.delete(1L));
+}
+
+----------------------------------------------
+
+2) id가 존재하는 경우
+
+-matcher : 정상적으로 삭제가 되었는지 값 확인
+private static class IsPersonWillBeDeleted implements ArgumentMatcher<Person> {
+    @Override
+    public boolean matches(Person person) {
+        return person.isDeleted(); //true = 삭제됨
+    }
+}
+
+-delete()
+@Test
+void delete(){
+    when(personRepository.findById(1L)).thenReturn(Optional.of(new Person("martin")));
+    personService.delete(1L);
+
+    //아래 delete인 이유는 service의 delete는 flag를 true로 바꾸는 코드
+    Mockito.verify(personRepository, times(1)).save(argThat(new IsPersonWillBeDeleted()));
+}
+
+=====================================================================
+
+4. PersonService : put 수정
+전에 만든 put은 데이터를 안 넣고 저장을 해도 오류가 나지 않는다. matcher 이용하기.

@@ -1,0 +1,48 @@
+plugins {
+	id 'org.springframework.boot' version '2.4.0'
+	id 'io.spring.dependency-management' version '1.0.10.RELEASE'
+	id 'java'
+}
+
+group = 'com.fastcampus.project02'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = '10'
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+
+	//validation
+	compile('org.springframework.boot:spring-boot-starter-validation')
+
+	//jpa
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+	//h2는 초경량으로 사용할 수 있는 데이터베이스 -> test, cache 등에 적합하다.
+	implementation 'com.h2database:h2'
+
+	//lombok
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+	testAnnotationProcessor 'org.projectlombok:lombok'
+	testCompileOnly 'org.projectlombok:lombok'
+
+	// mockito 라이브러리 추가
+	testImplementation 'org.mockito:mockito-junit-jupiter'
+
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+test {
+	useJUnitPlatform()
+}

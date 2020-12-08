@@ -1,0 +1,137 @@
+
+List Api & Paging 적용하기
+
+========================================================================
+
+1. 모든 사용자를 가져오는 기능 만들기 + test
+
+1) 모든 사용자를 가져오는 기능 만들기
+
+- PersonController
+@GetMapping
+public List<Person> getAll() {
+    return personService.getAll();
+}
+
+- PersonService
+public List<Person> getAll() {
+    return personRepository.findAll();
+}
+
+------------------------------------------
+
+2) 모든 사용자를 가져오는 기능 test
+
+- PersonServiceTest
+@Test
+void getAll() {
+    when(personRepository.findAll())
+            .thenReturn(Lists.newArrayList(new Person("martin"), new Person("dennis"), new Person("tony")));
+
+    List<Person> result = personService.getAll();
+
+    Assertions.assertThat(result.size()).isEqualTo(3);
+    Assertions.assertThat(result.get(0).getName()).isEqualTo("martin");
+    Assertions.assertThat(result.get(1).getName()).isEqualTo("dennis");
+    Assertions.assertThat(result.get(2).getName()).isEqualTo("tony");
+}
+
+- PersonControllerTest
+@Test
+void getAll() throws Exception {
+    mockMvc.perform(
+            MockMvcRequestBuilders.get("/api/person"))
+            .andExpect(status().isOk())
+            //"$"를 이용해 결과를 받아 사이즈를 가져와 비교한다.
+            //data.sql에는 7명이지만 "andrew"가 deleted된 상태이고
+            //Person의 where 조건이 findAll에서도 적용된다.
+            .andExpect(jsonPath("$").value(hasSize(6)))
+            //json에서 배열의 0번째 값 받아오기
+            .andExpect(jsonPath("$.[0].name").value("martin"))
+            .andExpect(jsonPath("$.[1].name").value("david"))
+            .andExpect(jsonPath("$.[2].name").value("dennis"))
+            .andExpect(jsonPath("$.[3].name").value("sophia"))
+            .andExpect(jsonPath("$.[4].name").value("benny"))
+            .andExpect(jsonPath("$.[5].name").value("tony"));
+}
+
+========================================================================
+
+2. Paging 적용하기
+
+1) Service : Pageable 사용하기
+
+- PersonService : getAll
+public Page<Person> getAll(Pageable pageable) {
+    return personRepository.findAll(pageable);
+}
+
+- PersonServiceTest
+@Test
+void getAll() {
+    when(personRepository.findAll(any(Pageable.class)))
+            .thenReturn(new PageImpl<>(Lists.newArrayList(new Person("martin"), new Person("dennis"), new Person("tony"))));
+
+    //Pageable은 interface. 이를 적용시켜 구현한 것이 PageRequest
+    Page<Person> result = personService.getAll(PageRequest.of(0, 3));
+
+    Assertions.assertThat(result.getNumberOfElements()).isEqualTo(3);
+    Assertions.assertThat(result.getContent().get(0).getName()).isEqualTo("martin");
+    Assertions.assertThat(result.getContent().get(1).getName()).isEqualTo("dennis");
+    Assertions.assertThat(result.getContent().get(2).getName()).isEqualTo("tony");
+}
+=> 일단 다른 오류는 적당히 null로 변경하고 test 진행
+==> pass. 사실 현재 test는 mock 테스트로 페이징이 제대로 진행되었는지는 확인할 수 없다.
+    기능이 제대로 작동하는지를 확인하는 데 의의를 둔 test
+
+------------------------------------------
+
+2) Controller : pageable 사용하기
+
+- PersonController : @PageableDefault
+@GetMapping
+public Page<Person> getAll(@PageableDefault Pageable pageable) {
+    return personService.getAll(pageable);
+}
+** PageableDefault => value, size, page가 10, 10, 0으로 고정된 페이지 기본 설정
+   @PageableDefault(size = 100) 처럼 변경할 수 있다.
+
+- PersonControllerTest
+@Test
+void getAll() throws Exception {
+    mockMvc.perform(
+            MockMvcRequestBuilders.get("/api/person"))
+            .andExpect(status().isOk())
+            //"$"를 이용해 결과를 받아 사이즈를 가져와 비교한다.
+            .andExpect(jsonPath("$").value(hasSize(7)))
+            //json에서 배열의 0번째 값 받아오기
+            .andExpect(jsonPath("$.content.[0].name").value("martin"))
+            .andExpect(jsonPath("$.content.[1].name").value("david"))
+            .andExpect(jsonPath("$.content.[2].name").value("dennis"))
+            .andExpect(jsonPath("$.content.[3].name").value("sophia"))
+            .andExpect(jsonPath("$.content.[4].name").value("benny"))
+            .andExpect(jsonPath("$.content.[5].name").value("tony"));
+}
+
+--실행 결과 : 위의 test는 에러가 발생한다.
+jsonPath("$").value(hasSize(7)) => 이 코드를 실행할 수 없기 때문이다.
+
+- PersonControllerTest
+@Test
+void getAll() throws Exception {
+    mockMvc.perform(
+            MockMvcRequestBuilders.get("/api/person")
+                    .param("page", "1") //현재 만들어질 페이지의 2번째 페이지를 받아온다. 0 = 첫 페이지
+                    .param("size", "2")) //size = 한 페이지에 출력되는 data 수
+            .andExpect(status().isOk())
+            //"$"를 이용해 결과를 받아 사이즈를 가져와 비교한다.
+            .andExpect(jsonPath("$.totalPages").value(3))
+            .andExpect(jsonPath("$.totalElements").value(6))
+            .andExpect(jsonPath("$.numberOfElements").value(2))
+            //json에서 배열의 0번째 값 받아오기
+            .andExpect(jsonPath("$.content.[0].name").value("dennis"))
+            .andExpect(jsonPath("$.content.[1].name").value("sophia"));
+}
+
+--실행 결과 : 성공
+아쉽게도 데이터가 6개 이기에 paging이 제대로 적용되었는지 확인하기 어렵다.

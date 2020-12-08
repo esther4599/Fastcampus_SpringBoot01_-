@@ -1,0 +1,81 @@
+
+repositoryTest의 경우 필요성에 대한 갑론을박이 많다.
+=> JpaRepository class 상속시 자동으로 잘 처리된다.
+
+하지만 값이 의도대로 처리되는지 확인할 필요가 있다.
+
+목표: test의 검정력 높이기
+
+=====================================================================
+
+1. PersonRepositoryTest
+
+- data.sql 에 데이터 추가
+insert into person(`id`, `name`, `year_of_birthday`, `month_of_birthday`, `day_of_birthday`) values (1, 'martin', 1991, 8, 15);
+insert into person(`id`, `name`, `year_of_birthday`, `month_of_birthday`, `day_of_birthday`) values (2, 'david', 1992, 7, 21);
+insert into person(`id`, `name`, `year_of_birthday`, `month_of_birthday`, `day_of_birthday`) values (3, 'dennis', 1993, 10, 15);
+insert into person(`id`, `name`, `year_of_birthday`, `month_of_birthday`, `day_of_birthday`) values (4, 'sophia', 1994, 8, 31);
+insert into person(`id`, `name`, `year_of_birthday`, `month_of_birthday`, `day_of_birthday`) values (5, 'benny', 1995, 12, 23);
+insert into person( `id`, `name`, `year_of_birthday`, `month_of_birthday`, `day_of_birthday`, `job`, `hobby`, `phone_number`, `address`)
+    values(6, 'tony', 1991, 7, 10, 'officer', 'reading', '010-2222-3333', '서울특별시');
+insert into person(`id`, `name`, `deleted`) values (7, 'andrew', true);
+
+- PersonRepositoryTest
+
+1) 이름으로 검색이 잘 되는지 확인
+@Test
+void findByName(){
+    List<Person> people = personRepository.findByName("tony");
+
+    Assertions.assertEquals(1, people.size());
+    Person person = people.get(0);
+    Assertions.assertAll(
+            () -> Assertions.assertEquals("tony", person.getName()),
+            () -> Assertions.assertEquals("reading", person.getHobby()),
+            () -> Assertions.assertEquals("서울특별시", person.getAddress()),
+            () -> Assertions.assertEquals(Birthday.of(LocalDate.of(1991, 7, 10)), person.getBirthday()),
+            () -> Assertions.assertEquals("officer", person.getJob()),
+            () -> Assertions.assertEquals("010-2222-3333", person.getPhoneNumber()),
+            () -> Assertions.assertEquals(false, person.isDeleted()) //default 값
+    );
+}
+
+----------------------------------------------
+
+2) Person의 where 절이 잘 작동하는지 확인
+@Test
+void findByNameIfDeleted(){
+    List<Person> people = personRepository.findByName("andrew");
+
+    Assertions.assertEquals(0, people.size());
+}
+=> delete된 데이터는 출력되지 않는다.
+
+----------------------------------------------
+
+3) 생일의 월로 검색이 잘 되는지 확인
+@Test
+void findBtMonthOfBirthday(){
+    List<Person> people = personRepository.findByMonthOfBirthday(7);
+
+    Assertions.assertEquals(2, people.size()); //3명 중 1명이 지워져서 2명으로 검사
+    Assertions.assertAll(
+            () -> Assertions.assertEquals("david",people.get(0).getName()),
+            () -> Assertions.assertEquals("tony", people.get(1).getName())
+    );
+}
+
+----------------------------------------------
+
+4) 삭제된 사람이 제대로 검색되는지 확인
+@Test
+void findByPeopleDeleted(){
+    List<Person> people = personRepository.findPeopleDeleted();
+
+    Assertions.assertEquals(1, people.size());
+    Assertions.assertEquals("andrew", people.get(0).getName());
+}
+
+=====================================================================
+
+** data.sql 파일은 수정된 경우 꼭 전체 테스트를 돌려 문제가 없는지 확인한다.

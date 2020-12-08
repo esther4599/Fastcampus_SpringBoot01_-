@@ -1,0 +1,160 @@
+
+========================================================================
+
+1. Controller 광범위하게 사용하기.
+
+1) hello world controller: controller 추가
+
+- helloWorldControllerTest
+@Test
+void helloException() throws Exception{
+    mockMvc.perform(MockMvcRequestBuilders.get("/api/hello"))
+            .andExpect(status().isInternalServerError());
+}
+
+=> 테스트 해보면 실패한다. exception handler가 personController에 존재하기 때문이다.
+   helloWorldController에 exception handler를 추가해준다.
+
+------------------------------------------
+
+2) helloWorldController: exceptionHandler 추가하기
+
+- helloWorldController : handleRunTimeException
+@ExceptionHandler(value = RuntimeException.class)
+public ResponseEntity<ErrorResponse> handleRunTimeException(RuntimeException ex){
+    return new ResponseEntity<>(ErrorResponse.of(
+            HttpStatus.INTERNAL_SERVER_ERROR, "can't explain error"),
+            HttpStatus.INTERNAL_SERVER_ERROR);
+}
+
+- helloWorldControllerTest : helloException
+@Test
+void helloException() throws Exception{
+    mockMvc.perform(MockMvcRequestBuilders.get("/api/helloException"))
+            .andExpect(status().isInternalServerError())
+            .andExpect(jsonPath("$.code").value(500))
+            .andExpect(jsonPath("$.message").value("can't explain error"));
+}
+
+========================================================================
+
+위와 같은 코딩은 불편하다. controller별로 발생 가능한 오류의 수 만큼 handler를 만들어 관리해야 하기 때문이다.
+뿐만 아니라 코더가 코딩을 하다 오류가 발생할 가능성도 크다.
+
+========================================================================
+
+2. 모든 Controller에서 사용 가능한 exceptionHandler 만들기
+
+1) java.exception.handler => 여태까지 만들었던 handler 가져오기
+
+@ExceptionHandler(value = RenameNotPermittedException.class)
+public ResponseEntity<ErrorResponse> RenameNoPermittedException(RenameNotPermittedException ex)  {
+    return new ResponseEntity<>(ErrorResponse.of(HttpStatus.BAD_REQUEST, ex.getMessage()), HttpStatus.BAD_REQUEST);
+}
+
+@ExceptionHandler(value = PersonNotFoundException.class)
+public ResponseEntity<ErrorResponse> PersonNotFoundException(PersonNotFoundException ex){
+    return new ResponseEntity<>(ErrorResponse.of(HttpStatus.BAD_REQUEST, ex.getMessage()), HttpStatus.BAD_REQUEST);
+}
+
+@ExceptionHandler(value = RuntimeException.class)
+public ResponseEntity<ErrorResponse> handleRunTimeException(RuntimeException ex){
+    log.error("server error: {}", ex.getMessage(), ex); //예외에 stack???? 뭐도 같이 남긴다.
+    return new ResponseEntity<>(ErrorResponse.of(HttpStatus.INTERNAL_SERVER_ERROR, "can't find cause"), HttpStatus.INTERNAL_SERVER_ERROR);
+}
+
+------------------------------------------
+
+2) ***@RestControllerAdvice***
+이걸 붙이면 전역에서 handler를 사용할 수 있게 된다.
+
+==> error 발생
+
+========================================================================
+
+3. json 타입 접근시 발생하는 에러
+
+1) ??? .http 파일로 확인하기
+application run -> server 뜸 -> test.java~~ / test.http 파일 만들기
+====> 내 프로젝트에서 파일이 인식이 안됨. 해당 파일을 이용해 오류 해결하면 좋다.
+
+------------------------------------------
+
+2) setControllerAdvice 설정하기. 원래 exceptionHandler가 있던 class에 등록
+
+- PersonController : beforeEach
+
+@Autowired
+private GlobalExceptionHandler globalExceptionHandler;
+
+@BeforeEach //해당 메소드는 매 테스트 전에 먼저 실행된다.
+void beforeEach(){
+    mockMvc = MockMvcBuilders
+            .standaloneSetup(personController)
+            .setMessageConverters(massageConverter)
+            .setControllerAdvice(globalExceptionHandler)
+            .alwaysDo(print())
+            .build();
+}
+
+------------------------------------------
+
+3) 코드 리팩토링
+.setMessageConverters(massageConverter)
+.setControllerAdvice(globalExceptionHandler)
+의 반복을 제거하기
+
+- PersonController
+@Autowired
+private WebApplicationContext wac;
+
+
+@BeforeEach //해당 메소드는 매 테스트 전에 먼저 실행된다.
+void beforeEach(){
+    mockMvc = MockMvcBuilders
+            .standaloneSetup(personController)
+            .setMessageConverters(massageConverter)
+            .setControllerAdvice(globalExceptionHandler)
+            .alwaysDo(print())
+            .build();
+}
+위의 코드를 아래의 코드로 변경한다.
+
+@BeforeEach //해당 메소드는 매 테스트 전에 먼저 실행된다.
+void beforeEach(){
+    mockMvc = MockMvcBuilders
+            .webAppContextSetup(wac)
+            .alwaysDo(print())
+            .build();
+}
+=> 사용하지 않게 된 autowired 변수들을 지운다.
+
+========================================================================
+
+4. GlobalExceptionHandler => 코드 리팩토링
+
+1) ResponseEntity<ErrorResponse>의 반복 제거하기.
+generic 제거하고 단순 return으로 변경
+
+public class GlobalExceptionHandler {
+    //아이디는 같은데 이름은 다른 경우 오류 핸들러
+    @ExceptionHandler(RenameNotPermittedException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST) //header 값 지정
+    public ErrorResponse RenameNoPermittedException(RenameNotPermittedException ex)  {
+        return ErrorResponse.of(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(PersonNotFoundException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST) //header 값 지정
+    public ErrorResponse PersonNotFoundException(PersonNotFoundException ex){
+        return ErrorResponse.of(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(RuntimeException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR) //header 값 지정
+    public ErrorResponse handleRunTimeException(RuntimeException ex){
+        log.error("server error: {}", ex.getMessage(), ex); //예외에 stack???? 뭐도 같이 남긴다.
+        return ErrorResponse.of(HttpStatus.INTERNAL_SERVER_ERROR, "can't find cause");
+    }
+}
+

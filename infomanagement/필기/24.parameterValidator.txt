@@ -1,0 +1,168 @@
+
+오늘의 point : ParameterValidation
+앞에 필기가 저장이 안 된 상태로 꺼진 것 같은데 post 함수에서 name 값이 null로 입력되면
+오류가 발생하는 코드가 있었다. Person에서 name은 null 코드.
+
+-ControllerTest
+@Test //post에서 name이 null인 경우
+void postPersonIfNameIsNull() throws Exception {
+    PersonDTO dto = new PersonDTO();
+    mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/person")
+            .contentType(MediaType.APPLICATION_JSON_UTF8)
+            .content(toJsonString(dto)))
+            .andExpect(jsonPath("$.code").value(500))
+            .andExpect(jsonPath(".message").value("can't find cause"));
+}
+
+이를 수정하고 Parameter Validation을 적용해보자
+
+========================================================================
+
+1. PersonControllerTest : postPersonIfNameIsNull
+
+1) PersonControllerTest : postPersonIfNameIsNull 수정
+.andExpect(jsonPath("$.code").value(500))
+해당 코드에서는 오류는 사용자의 입력 실수로 발생하므로 500 코드 error는 옳바르지 못하다.
+
+@Test //post에서 name이 null인 경우
+void postPersonIfNameIsNull() throws Exception {
+    PersonDTO dto = new PersonDTO();
+    mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/person")
+            .contentType(MediaType.APPLICATION_JSON_UTF8)
+            .content(toJsonString(dto)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value(400))
+            .andExpect(jsonPath("$.message").value("name is necessary"));
+}
+
+------------------------------------------
+
+2) ParameterValidation 적용
+
+- PersonDTO : ParameterValidation 추가
+public class PersonDTO {
+    @NotEmpty
+    private String name;
+    private String hobby;
+    private String address;
+    private LocalDate birthday;
+    private String job;
+    private String phoneNumber;
+}
+
+-PersonController : @Valid
+public void postPerson(@RequestBody @Valid PersonDTO personDTO){
+    personService.put(personDTO);
+}
+
+--실행 결과
+기존에는 500이었으나 400 error 발생.
+그러나 MockHttpServletResponse에 body 없음.
+
+=> Validation failed for argument에 대한 오류가 발생
+   이에 맞는 Handler 추가하기
+
+------------------------------------------
+
+3) 오류 처리하기
+
+- GlobalExceptionHandler
+@ExceptionHandler(MethodArgumentNotValidException.class)
+@ResponseStatus(HttpStatus.BAD_REQUEST)
+public ErrorResponse handleMethodArgumentNotValidException(MethodArgumentNotValidException ex) {
+    return ErrorResponse.of(HttpStatus.BAD_REQUEST, ex.getMessage());
+}
+
+--실행 결과
+Body = {"code":400,"message":"Validation failed for argument [0] in public void com.fastcampus.project02.infomanagement.controller.PersonController.postPerson(com.fastcampus.project02.infomanagement.domain.dto.PersonDTO): [Field error in object 'personDTO' on field 'name': rejected value [null]; codes [NotEmpty.personDTO.name,NotEmpty.name,NotEmpty.java.lang.String,NotEmpty]; arguments [org.springframework.context.support.DefaultMessageSourceResolvable: codes [personDTO.name,name]; arguments []; default message [name]]; default message [must not be empty]] "}
+=> message가 예상과 다르게 출력됨
+
+- GlobalExceptionHandler
+@ExceptionHandler(MethodArgumentNotValidException.class)
+@ResponseStatus(HttpStatus.BAD_REQUEST)
+public ErrorResponse handleMethodArgumentNotValidException(MethodArgumentNotValidException ex) {
+    return ErrorResponse.of(HttpStatus.BAD_REQUEST,
+        ex.getBindingResult().getFieldError().getDefaultMessage());
+}
+
+--실행 결과
+Body = {"code":400,"message":"must not be empty"}
+
+-PersonDTO : @NotEmpty()에 message 설정 추가
+public class PersonDTO {
+    @NotEmpty(message = "name is necessary")
+    private String name;
+    private String hobby;
+    private String address;
+    private LocalDate birthday;
+    private String job;
+    private String phoneNumber;
+}
+
+--실행 결과
+드디어 test 성공. Body = {"code":400, "message":"name is necessary"}
+그러나 warning message가 발생한다.
+GlobalExceptionHandler에서 작성한 getDefaultMessage() 메소드의 경우
+값이 없어 오류를 발생시킬 수도 있음을
+
+------------------------------------------
+
+4) ErrorResponse 수정
+
+- ErrorResponse 아래 메소드 추가
+public static ErrorResponse of(HttpStatus httpStatus, FieldError fieldError){
+    if(fieldError == null)
+        return new ErrorResponse(httpStatus.value(), "invalid params");
+    return new ErrorResponse(httpStatus.value(), fieldError.getDefaultMessage());
+}
+
+------------------------------------------
+
+5) test 추가
+
+-PersonControllerTest : name = ""인 경우 test
+@Test //personDTO의 @NotEmpty는 null과 "" 모두를 불허한다.
+void postPersonIfNameIsEmpty() throws Exception{
+    PersonDTO personDTO = new PersonDTO();
+    personDTO.setName("");
+
+    mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/person")
+            .contentType(MediaType.APPLICATION_JSON_UTF8)
+            .content(toJsonString(personDTO)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value(400))
+            .andExpect(jsonPath("$.message").value("name is necessary"));
+}
+
+--실행 결과 : 성공
+
+-PersonController : name = " " 인 경우 확인
+@Test
+void postPersonIfNameIsBlankSpace() throws  Exception {
+    PersonDTO personDTO = new PersonDTO();
+    personDTO.setName(" ");
+    mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/person")
+            .contentType(MediaType.APPLICATION_JSON_UTF8)
+            .content(toJsonString(personDTO)))
+            .andExpect(jsonPath("$.code").value(400))
+            .andExpect(jsonPath("$.message").value("name is necessary"));
+}
+
+--실행 결과 : 실패. @NotNull = 공백은 잡지 못한다.
+
+-PersonDTO : vaild 변경. @NotBlank 적용.
+public class PersonDTO {
+    @NotBlank(message = "name is necessary")
+    private String name;
+    private String hobby;
+    private String address;
+    private LocalDate birthday;
+    private String job;
+    private String phoneNumber;
+}
+
+--실행 결과 : 성공

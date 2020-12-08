@@ -1,0 +1,119 @@
+
+1. springboot 특성
+
+1) 생산성
+
+2) coding by convention 활용
+=> spring boot에서 제공하는 디폴트 값들을 기반으로 하는 기능들을 활용
+=> ex) h2db
+
+========================================================================
+
+2. 학습했던 내용 정리
+
+1) 스프링부트 프로젝트 생성
+
+2) gradle을 이용한 의존성 관리 => 추가적 학습 추천
+
+3) Iteration(반복주기) 개발로 2-cycle 개발 진행
+
+========================================================================
+
+3. 1-cycle 내용 정리
+
+1) JPA : data 관련
+    entity 생성 : @Entity => Person, Block(나중에 boolean으로 변경)
+
+    @OneToOne Relation => Block
+        cascadeType
+        FetchType
+        Optional, orphanRemoval
+
+    QueryMethod
+        @Embedded => birthday(@Embeddable)
+        @Valid => birthday(날짜)
+        @Query => customizing된 query 사용
+        @Where (for soft delete) => person의 delete
+        Data.sql => test에서 데이터 이용 content()가 알아서 인식
+
+2) SpringMVC : 주로 Controller
+    @GetMapping : get
+    @PostMapping : create
+    @PutMapping : update
+    @PatchMapping : update와 유사...?
+    @DeleteMapping : delete
+    @PathVariable : url에서 값 받기
+    @RequestBody : body(content)에서 데이터 가져오기
+
+3) Lombok : spring은 아니지만 데이터 관리를 유용하게
+    @Getter
+    @Setter
+    @ToString
+    @Constructor
+    @EqualsAndHashCode
+    @Data
+
+4) SpringTest
+    log 이용
+
+5) Java8
+    Stream
+    Filter
+    Map
+
+========================================================================
+
+4. 1-cycle 내용 정리
+
+1) SpringMVC
+    CustomJsonSerializer => birthday 객체에서 형식을 지정해 값 return
+
+2) SpringTest
+    MockMvc Test
+    Matcher
+    Junit5
+
+3) MockTest
+    Mockito //함수 껍데기만 실행
+    CustomArgumentMatcher => mock.verify 에서 값 검증용으로 주로 사용
+
+4) Exception Handling
+    CustomException
+    ExceptionHandler
+    GlobalExceptionHandler : @RestControllerAdvice
+
+5) Parameter Validator
+    @NotEmpty => null, ""
+    @NotBlank => null, "", " "
+    @Valid => valid가 있는 객체 사용하는 쪽에 작성
+
+6) Paging
+    Pageable
+    Page<T>
+
+========================================================================
+
+5. 추가적으로 학습하면 좋을 것
+
+1) FE 개발
+    web
+        vueJs, reactJs
+
+    app
+        android app
+        IOS app
+
+2) DB 연동
+    MySQL
+    MongoDB
+
+3) SpringBoot 중급 활용
+    추가적인 설명
+    customizing 설정
+
+4) JPA 중급 활용
+    다양한 Relation
+    QueryDSL / Jooq
+
+5) 로직의 확장
+    추가적인 스펙

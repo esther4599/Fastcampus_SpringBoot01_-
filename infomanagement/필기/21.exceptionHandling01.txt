@@ -1,0 +1,108 @@
+-Person Service
+=> exception을 사용한 코드
+우리가 코드에서 사용한 RunTimeException는 uncheked exception이다.
+
+-custom exception : 사용자가 재정의하여 사용하는 예외 처리
+=> 왜 사용해야 할까?
+작성한 코드의 modify => 아이디와 personDTO를 입력하는 함수
+를 test의 getPersonIfNotFound를 통해 직접 호출하면 NoSearchException이 발생한다.
+이는 runTimeException을 상속받은 객체이다.
+일반적으로 프로그램에서 개발자가 의도적으로 발생시킨 오류는 별도의 custom 오류로 지정해 관리하는게 좋다.
+
+========================================================================
+
+1. PersonNotFoundException 만들기
+
+1) PersonNotFoundException 작성하기
+
+- java -> exception -> PersonNotFoundException
+@Slf4j
+public class PersonNotFoundException extends RuntimeException{
+    public PersonNotFoundException(String message){
+        super(message);
+        log.error(message);
+    }
+}
+
+- PersonService : modify(Long id, String name)
+@Transactional
+public void modify(Long id, String name) {
+    //아래 코드에 적용
+    Person person = personRepository.findById(id).orElseThrow(
+        () -> new PersonNotFoundException("아이디가 존재하지 않습니다."));
+
+    person.setName(name);
+    personRepository.save(person);
+}
+
+- PersonServiceTest : modifyByNameIfPersonNotFound() 에서 실행
+
+--실행 결과 : 오류가 발생하지 않는다.
+
+------------------------------------------
+
+2) PersonNotFoundException 적용하기
+
+위의 코드에서
+- PersonServiceTest : modifyByNameIfPersonNotFound()
+@Test
+void modifyByNameIfPersonNotFound(){
+    when(personRepository.findById(1L)).thenReturn(Optional.empty());
+
+    //아래 코드에 PersonNotFoundException 적용
+    assertThrows(PersonNotFoundException.class, () -> personService.modify(1L, "daniel"));
+}
+=> 더 좁은 범위의 오류 감지
+
+------------------------------------------
+
+3) 기본적으로 발생하는 예외
+
+만약
+-Service : findById(id).get() 으로 수정
+@Transactional
+public void modify(Long id, String name) {
+    //아래 코드 수정
+    Person person = personRepository.findById(id).get();
+
+    person.setName(name);
+    personRepository.save(person);
+}
+하고 test를 실행한다면
+NoSuchElementException이 발생한다는 오류를 확인할 수 있다.
+
+------------------------------------------
+
+4) PersonNotFoundException 수정하기 : 오류 메시지 고정
+
+-PersonNotFoundException
+@Slf4j
+public class PersonNotFoundException extends RuntimeException{
+    private static final String MESSAGE = "entity is not found";
+
+    public PersonNotFoundException(){
+        super(MESSAGE);
+        log.error(MESSAGE);
+    }
+}
+
+관련 함수 수정하기
+
+-PersonService
+@Transactional
+public void modify(Long id, String name) {
+    //아래는 람다식을 적용한 코드
+    Person person = personRepository.findById(id).orElseThrow(PersonNotFoundException::new);
+
+    person.setName(name);
+    personRepository.save(person);
+}
+
+
+--실행결과
+PersonNotFoundException - entity is not found
+
+========================================================================
+
+2. 다른 error에도 적용하기
+이름이 다른 경우
